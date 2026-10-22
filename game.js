@@ -34,6 +34,13 @@ const leaderboardList = document.getElementById('leaderboardList');
 const toastEl = document.getElementById('toast');
 const btnLeft = document.getElementById('btnLeft');
 const btnRight = document.getElementById('btnRight');
+const btnJumpBoard = document.getElementById('btnJumpBoard');
+const nameHint = document.getElementById('nameHint');
+
+// Bump on every release so players can tell whether their phone loaded the new build
+const GAME_VERSION = 'v2026.10.22';
+const DEFAULT_NAME = '電腦課高手';
+document.getElementById('gameVersion').textContent = GAME_VERSION;
 
 // Sync saved player name between sidebar and modal.
 // Saved to both localStorage and a cookie: some in-app browsers (LINE, Facebook) drop localStorage between visits.
@@ -63,7 +70,15 @@ function syncInputsFromSidebar() {
 function syncInputsFromModal() {
   playerNameInput.value = modalNameInput.value;
   saveName(modalNameInput.value);
+  updateNameHint();
 }
+// Highlight the name field while it still holds the default name
+function updateNameHint() {
+  const isDefault = !modalNameInput.value.trim() || modalNameInput.value.trim() === DEFAULT_NAME;
+  modalNameInput.classList.toggle('needs-name', isDefault);
+  nameHint.classList.toggle('hidden', !isDefault);
+}
+btnJumpBoard.addEventListener('click', () => leaderboardList.scrollIntoView({ behavior: 'smooth', block: 'start' }));
 playerNameInput.addEventListener('input', syncInputsFromSidebar);
 modalNameInput.addEventListener('input', syncInputsFromModal);
 playerNameInput.addEventListener('change', syncInputsFromSidebar);
@@ -691,6 +706,11 @@ function renderLeaderboard() {
   leaderboardList.innerHTML = '';
   const list = leaderboardData.records || [];
 
+  document.getElementById('liveBadge').classList.toggle('offline', !leaderboardOnline);
+  document.getElementById('liveText').textContent = leaderboardOnline ? 'LIVE' : '離線';
+  const top = list[0];
+  btnJumpBoard.textContent = top ? `🏆 第 1 名 ${top.name} ${formatFloor(top.floor)} ↓` : '🏆 排行榜 ↓';
+
   if (!leaderboardOnline) {
     const warn = document.createElement('div');
     warn.className = 'loading-text lb-offline';
@@ -1012,6 +1032,7 @@ function triggerGameOver(cause) {
   btnUploadScore.disabled = false;
   btnUploadScore.textContent = '🚀 上傳成績到排行榜';
 
+  updateNameHint();
   gameOverModal.classList.remove('hidden');
 }
 
