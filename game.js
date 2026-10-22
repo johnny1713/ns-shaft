@@ -35,20 +35,39 @@ const toastEl = document.getElementById('toast');
 const btnLeft = document.getElementById('btnLeft');
 const btnRight = document.getElementById('btnRight');
 
-// Sync saved player name between sidebar and modal
-if (localStorage.getItem('nss_name')) playerNameInput.value = localStorage.getItem('nss_name');
+// Sync saved player name between sidebar and modal.
+// Saved to both localStorage and a cookie: some in-app browsers (LINE, Facebook) drop localStorage between visits.
+function loadSavedName() {
+  try {
+    const stored = localStorage.getItem('nss_name');
+    if (stored) return stored;
+  } catch (e) {}
+  const m = document.cookie.match(/(?:^|;\s*)nss_name=([^;]*)/);
+  return m ? decodeURIComponent(m[1]) : '';
+}
+function saveName(name) {
+  name = (name || '').trim().slice(0, 16);
+  if (!name) return;
+  try { localStorage.setItem('nss_name', name); } catch (e) {}
+  document.cookie = `nss_name=${encodeURIComponent(name)}; max-age=31536000; path=/; SameSite=Lax`;
+}
+
+const savedName = loadSavedName();
+if (savedName) playerNameInput.value = savedName;
 modalNameInput.value = playerNameInput.value;
 
 function syncInputsFromSidebar() {
   modalNameInput.value = playerNameInput.value;
-  localStorage.setItem('nss_name', playerNameInput.value.trim());
+  saveName(playerNameInput.value);
 }
 function syncInputsFromModal() {
   playerNameInput.value = modalNameInput.value;
-  localStorage.setItem('nss_name', modalNameInput.value.trim());
+  saveName(modalNameInput.value);
 }
 playerNameInput.addEventListener('input', syncInputsFromSidebar);
 modalNameInput.addEventListener('input', syncInputsFromModal);
+playerNameInput.addEventListener('change', syncInputsFromSidebar);
+modalNameInput.addEventListener('change', syncInputsFromModal);
 
 // ============================================================================
 // Title / Achievement System (稱號系統)
