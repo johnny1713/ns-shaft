@@ -12,6 +12,10 @@ const MAX_HP = 12;
 const FIXED_MAP_SEED = 20261022;
 const PLAT_GAP_Y = 92;
 
+// Google Firebase Realtime Database URL (貼上你的 Firebase Realtime Database 網址即可全服同步！)
+// 例如: 'https://ns-shaft-xxxxx-default-rtdb.asia-southeast1.firebasedatabase.app'
+const FIREBASE_DB_URL = 'https://ns-shaft-5e71f-default-rtdb.firebaseio.com';
+
 // DOM Elements
 const lifeBarsEl = document.getElementById('lifeBars');
 const hudHpText = document.getElementById('hudHpText');
@@ -454,7 +458,76 @@ function applyStaticFallbackData(ghostId) {
   renderLeaderboard();
 }
 
+async function fetchFromFirebase(ghostId) {
+  const baseUrl = FIREBASE_DB_URL.replace(/\/+$/, '');
+  const res = await fetch(`${baseUrl}/records.json`);
+  if (!res.ok) throw new Error('Firebase read error');
+  const raw = await res.json();
+
+  let records = [];
+  if (raw && typeof raw === 'object') {
+    records = Object.entries(raw).map(([key, val]) => ({
+      id: key,
+      ...val,
+      hasGhost: Array.isArray(val.ghost) && val.ghost.length > 5
+    }));
+  }
+
+  // If Firebase DB is brand new & empty, seed initial default records so players have a ghost to race!
+  if (records.length === 0) {
+    const seedDb = getLocalFallbackDB();
+    for (const rec of seedDb.records) {
+      await fetch(`${baseUrl}/records.json`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(rec)
+      }).catch(() => {});
+    }
+    records = seedDb.records;
+  }
+
+  records.sort((a, b) => (b.floor || 0) - (a.floor || 0) || (b.timeMs || 0) - (a.timeMs || 0));
+
+  const totalGames = records.length;
+  const maxFloorEver = records.reduce((m, r) => Math.max(m, r.floor || 1), 1);
+  const totalFloorsDescended = records.reduce((s, r) => s + (r.floor || 0), 0);
+
+  let targetGhostRec = null;
+  if (ghostId) {
+    targetGhostRec = records.find(r => r.id === ghostId && Array.isArray(r.ghost) && r.ghost.length > 5);
+  }
+  if (!targetGhostRec) {
+    targetGhostRec = records.find(r => Array.isArray(r.ghost) && r.ghost.length > 5);
+  }
+
+  leaderboardData = {
+    records: records.slice(0, 20),
+    deaths: [],
+    stats: { totalGames, maxFloorEver, totalFloorsDescended }
+  };
+
+  if (targetGhostRec) {
+    topGhost = {
+      id: targetGhostRec.id,
+      name: targetGhostRec.name,
+      floor: targetGhostRec.floor,
+      frames: targetGhostRec.ghost
+    };
+    selectedGhostId = targetGhostRec.id;
+    ghostStatusLabel.textContent = `👻 對戰殘影：${topGhost.name} (B${topGhost.floor})`;
+  }
+  renderLeaderboard();
+}
+
 async function fetchLeaderboard(ghostId = selectedGhostId) {
+  if (FIREBASE_DB_URL) {
+    try {
+      await fetchFromFirebase(ghostId);
+      return;
+    } catch (err) {
+      console.warn('[Johnny_LOG] Firebase fetch fallback:', err);
+    }
+  }
   try {
     const url = ghostId ? `/api/leaderboard?ghostId=${encodeURIComponent(ghostId)}` : '/api/leaderboard';
     const res = await fetch(url);
@@ -487,8 +560,35 @@ async function handleManualUpload() {
     title: lastTitle,
     deathX: Math.round(player.x),
     deathY: Math.round(player.y),
+    date: new Date().toISOString(),
     ghost: useFixedSeed ? recordedGhost : []
   };
+
+  // 1. If Google Firebase Realtime Database is configured, upload directly to Firebase!
+  if (FIREBASE_DB_URL) {
+    try {
+      const baseUrl = FIREBASE_DB_URL.replace(/\/+$/, '');
+      const postRes = await fetch(`${baseUrl}/records.json`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!postRes.ok) throw new Error('Firebase POST failed');
+      const postData = await postRes.json();
+      const newKey = postData.name;
+      hasUploadedCurrentRun = true;
+      selectedGhostId = newKey;
+      await fetchFromFirebase(newKey);
+      const rank = leaderboardData.records.findIndex(r => r.id === newKey) + 1 || 1;
+      lastUploadedRank = rank;
+      document.getElementById('modalRankStat').textContent = `#${rank}`;
+      btnUploadScore.textContent = `✅ 已同步至全服雲端排行榜！(第 #${rank} 名)`;
+      showToast(`🏆 成績已同步至 Google Firebase 全服第 #${rank} 名！`);
+      return;
+    } catch (err) {
+      console.warn('[Johnny_LOG] Firebase upload error:', err);
+    }
+  }
 
   try {
     const res = await fetch('/api/submit', {
