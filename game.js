@@ -50,7 +50,7 @@ function drawLegendIcons() {
 }
 
 // Bump on every release so players can tell whether their phone loaded the new build
-const GAME_VERSION = 'v2026.10.22b';
+const GAME_VERSION = 'v2026.10.22c';
 const DEFAULT_NAME = '電腦課高手';
 document.getElementById('gameVersion').textContent = GAME_VERSION;
 
@@ -1094,6 +1094,19 @@ function beginRunIfWaiting() {
   sfx.init(); // Audio can only start from a user gesture
 }
 
+// Restarting mid-run needs a second press within 2 seconds, so a stray tap never throws away a good run
+let restartArmedUntil = 0;
+function requestRestart(onConfirm = startNewGame) {
+  const midRun = !isGameOver && !isWaitingStart;
+  if (midRun && performance.now() > restartArmedUntil) {
+    restartArmedUntil = performance.now() + 2000;
+    showToast('⚠️ 遊戲進行中，2 秒內再按一次才會重來');
+    return;
+  }
+  restartArmedUntil = 0;
+  onConfirm();
+}
+
 window.addEventListener('keydown', e => {
   if (isTypingInInput()) return;
   if (['ArrowLeft', 'ArrowRight', 'a', 'A', 'd', 'D'].includes(e.key)) beginRunIfWaiting();
@@ -1105,7 +1118,7 @@ window.addEventListener('keydown', e => {
     btnRight.classList.add('pressed');
   } else if (e.key === ' ' || e.key === 'r' || e.key === 'R') {
     e.preventDefault();
-    startNewGame();
+    if (!e.repeat) requestRestart();
   }
 });
 
@@ -1181,7 +1194,10 @@ document.getElementById('btnNativeShareImg').addEventListener('click', nativeSha
 document.getElementById('btnCloseImgModal').addEventListener('click', () => imgPreviewModal.classList.add('hidden'));
 document.getElementById('btnLineModal').addEventListener('click', shareToLine);
 document.getElementById('btnShareModal').addEventListener('click', copyShareText);
-document.getElementById('btnRestart').addEventListener('click', startNewGame);
+document.getElementById('btnRestart').addEventListener('click', e => {
+  e.currentTarget.blur(); // Keep Space from re-clicking the focused button
+  requestRestart();
+});
 document.getElementById('btnRetryModal').addEventListener('click', startNewGame);
 
 document.getElementById('btnMute').addEventListener('click', e => {
@@ -1197,7 +1213,7 @@ function setSeedMode(fixed) {
 
 toggleGhostInput.addEventListener('change', updateGhostLabel);
 
-btnSeedMode.addEventListener('click', () => {
+btnSeedMode.addEventListener('click', () => requestRestart(() => {
   setSeedMode(!useFixedSeed);
   showToast(
     useFixedSeed
@@ -1205,7 +1221,7 @@ btnSeedMode.addEventListener('click', () => {
       : '🎲 已切換為【經典隨機模式】：每局地板位置完全隨機！'
   );
   startNewGame();
-});
+}));
 
 // ============================================================================
 // Physics & Update Loop (1:1 Authentic NS-Shaft Mechanics)
