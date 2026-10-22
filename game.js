@@ -50,7 +50,7 @@ function drawLegendIcons() {
 }
 
 // Bump on every release so players can tell whether their phone loaded the new build
-const GAME_VERSION = 'v2026.10.22f';
+const GAME_VERSION = 'v2026.10.22g';
 const DEFAULT_NAME = '電腦課高手';
 document.getElementById('gameVersion').textContent = GAME_VERSION;
 
@@ -764,12 +764,20 @@ function renderLeaderboard() {
         <span class="lb-meta">${(item.timeMs / 1000).toFixed(1)}s</span>
       </div>
       ${item.hasGhost ? `<button class="lb-pk">${isSelectedGhost ? 'PK中' : '👻PK'}</button>` : ''}
+      ${adminUser && item !== urlChallenge ? '<button class="lb-del" title="刪除這筆紀錄">🗑️</button>' : ''}
     `;
     row.querySelector('.lb-name').textContent = item.name;
     row.querySelector('.lb-cause').textContent = item.title ? `${item.title} (${item.cause})` : item.cause;
 
     if (item.hasGhost) {
       row.addEventListener('click', () => challengeGhost(item));
+    }
+    const delBtn = row.querySelector('.lb-del');
+    if (delBtn) {
+      delBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        adminDeleteRecord(item);
+      });
     }
 
     leaderboardList.appendChild(row);
@@ -1820,6 +1828,153 @@ function gameLoop(now) {
   draw();
   requestAnimationFrame(gameLoop);
 }
+
+// ============================================================================
+// Hidden admin mode: long-press the version label for 3 seconds, sign in with Google.
+// The page only shows the delete buttons; database.rules.json is what actually allows
+// deletes, and only for ADMIN_UID. The Firebase SDK is loaded only when needed.
+// ============================================================================
+const FIREBASE_CONFIG = {
+  apiKey: 'AIzaSyB-IfYv9NzuN6aiIKjLVBaLQANqJtcs5UQ',
+  authDomain: 'ns-shaft-5e71f.firebaseapp.com',
+  projectId: 'ns-shaft-5e71f',
+  appId: '1:614763824077:web:6f030f0e842c7455d4fa84'
+};
+const FIREBASE_SDK = 'https://www.gstatic.com/firebasejs/10.12.2/';
+const adminModal = document.getElementById('adminModal');
+let adminUser = null;
+let firebaseAuth = null;
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const el = document.createElement('script');
+    el.src = src;
+    el.onload = resolve;
+    el.onerror = reject;
+    document.head.appendChild(el);
+  });
+}
+
+async function initAdminAuth() {
+  if (firebaseAuth) return firebaseAuth;
+  await loadScript(FIREBASE_SDK + 'firebase-app-compat.js');
+  await loadScript(FIREBASE_SDK + 'firebase-auth-compat.js');
+  firebase.initializeApp(FIREBASE_CONFIG);
+  firebaseAuth = firebase.auth();
+  await new Promise(resolve => {
+    const stop = firebaseAuth.onAuthStateChanged(user => {
+      stop();
+      resolve();
+    });
+  });
+  firebaseAuth.onAuthStateChanged(user => {
+    adminUser = user;
+    try { user ? localStorage.setItem('nss_admin', '1') : localStorage.removeItem('nss_admin'); } catch (e) {}
+    renderAdminPanel();
+    renderLeaderboard();
+  });
+  return firebaseAuth;
+}
+
+function renderAdminPanel() {
+  const signedIn = !!adminUser;
+  document.getElementById('adminSignedOut').classList.toggle('hidden', signedIn);
+  document.getElementById('adminSignedIn').classList.toggle('hidden', !signedIn);
+  if (signedIn) {
+    document.getElementById('adminEmail').textContent = adminUser.email || '';
+    document.getElementById('adminUid').textContent = adminUser.uid;
+  }
+}
+
+async function openAdminPanel() {
+  adminModal.classList.remove('hidden');
+  document.getElementById('adminStatus').textContent = '';
+  try {
+    await initAdminAuth();
+    renderAdminPanel();
+  } catch (e) {
+    document.getElementById('adminStatus').textContent = '⚠️ 載入登入元件失敗，請檢查網路';
+  }
+}
+
+async function adminRequest(path, method = 'DELETE') {
+  const token = await adminUser.getIdToken();
+  const res = await fetch(`${firebaseBase()}/${path}.json?auth=${encodeURIComponent(token)}`, { method });
+  if (!res.ok) throw new Error(`${method} ${path} failed ${res.status}`);
+  return res;
+}
+
+async function adminDeleteRecord(item) {
+  if (!adminUser) return;
+  if (!confirm(`確定刪除這筆紀錄？\n\n${item.name}　${formatFloor(item.floor)} 層　${(item.timeMs / 1000).toFixed(1)}s`)) return;
+  try {
+    // Ghost first: its write rule depends on the record, so the record goes last
+    await adminRequest(`ghosts/${encodeURIComponent(item.id)}`);
+    await adminRequest(`records/${encodeURIComponent(item.id)}`);
+    ghostCache.delete(item.id);
+    if (selectedGhostId === item.id) {
+      selectedGhostId = null;
+      topGhost = null;
+    }
+    showToast(`🗑️ 已刪除 ${item.name} 的紀錄`);
+    fetchLeaderboard();
+  } catch (e) {
+    console.warn('[Johnny_LOG] Admin delete failed:', e);
+    showToast('⚠️ 刪除失敗：可能規則還沒加入你的管理員 UID');
+  }
+}
+
+async function adminCleanOrphanGhosts() {
+  const status = document.getElementById('adminStatus');
+  status.textContent = '清理中...';
+  try {
+    const [recRes, ghostRes] = await Promise.all([
+      fetch(`${firebaseBase()}/records.json?shallow=true`, { cache: 'no-store' }),
+      fetch(`${firebaseBase()}/ghosts.json?shallow=true`, { cache: 'no-store' })
+    ]);
+    const recIds = new Set(Object.keys((await recRes.json()) || {}));
+    const orphans = Object.keys((await ghostRes.json()) || {}).filter(id => !recIds.has(id));
+    for (const id of orphans) await adminRequest(`ghosts/${encodeURIComponent(id)}`);
+    status.textContent = orphans.length ? `✅ 已清掉 ${orphans.length} 筆孤兒殘影` : '✅ 沒有孤兒殘影';
+  } catch (e) {
+    console.warn('[Johnny_LOG] Orphan cleanup failed:', e);
+    status.textContent = '⚠️ 清理失敗：可能規則還沒加入你的管理員 UID';
+  }
+}
+
+document.getElementById('btnAdminSignIn').addEventListener('click', async () => {
+  try {
+    await firebaseAuth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+  } catch (e) {
+    document.getElementById('adminStatus').textContent =
+      `⚠️ 登入失敗（${e.code || e.message}）。LINE 內建瀏覽器不能用 Google 登入，請改用 Safari 或 Chrome`;
+  }
+});
+document.getElementById('btnAdminSignOut').addEventListener('click', () => firebaseAuth.signOut());
+document.getElementById('btnAdminClean').addEventListener('click', adminCleanOrphanGhosts);
+document.getElementById('btnAdminCopyUid').addEventListener('click', () => {
+  const uid = adminUser ? adminUser.uid : '';
+  navigator.clipboard?.writeText(uid).then(() => showToast('📋 UID 已複製'), () => prompt('複製這串 UID：', uid));
+});
+document.getElementById('btnAdminClose').addEventListener('click', () => adminModal.classList.add('hidden'));
+
+// Long-press (3 s) on the version label opens the admin panel
+(() => {
+  const label = document.getElementById('gameVersion');
+  let timer = null;
+  const cancel = () => clearTimeout(timer);
+  label.addEventListener('pointerdown', () => {
+    cancel();
+    timer = setTimeout(openAdminPanel, 3000);
+  });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => label.addEventListener(ev, cancel));
+  label.addEventListener('contextmenu', e => e.preventDefault());
+})();
+
+// Stay in admin mode across visits once signed in
+try {
+  if (localStorage.getItem('nss_admin')) initAdminAuth().catch(() => {});
+} catch (e) {}
 
 // Boot
 startNewGame();

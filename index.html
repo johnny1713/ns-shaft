@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>小朋友下樓梯 NS-SHAFT ONLINE ⚡ 經典復刻＋全服殘影排行榜</title>
-  <link rel="stylesheet" href="style.css?v=11" />
+  <link rel="stylesheet" href="style.css?v=12" />
 </head>
 <body>
   <div class="app-shell">
@@ -83,6 +83,29 @@
       </div>
 
       <!-- Share Card Preview (full screen so it is visible wherever the page is scrolled) -->
+      <div id="adminModal" class="modal hidden">
+        <div class="modal-box confirm-box">
+          <h2>🔐 管理員</h2>
+          <div id="adminSignedOut">
+            <p>用 Google 登入後，排行榜每一筆旁邊會出現 🗑️</p>
+            <button id="btnAdminSignIn" class="btn-upload">用 Google 登入</button>
+          </div>
+          <div id="adminSignedIn" class="hidden">
+            <p>已登入：<span id="adminEmail"></span></p>
+            <p class="admin-uid">UID：<span id="adminUid"></span></p>
+            <div class="confirm-actions">
+              <button id="btnAdminCopyUid" class="btn-cancel">複製 UID</button>
+              <button id="btnAdminClean" class="btn-cancel">清理孤兒殘影</button>
+            </div>
+            <div class="confirm-actions admin-row">
+              <button id="btnAdminSignOut" class="btn-cancel">登出</button>
+            </div>
+          </div>
+          <p id="adminStatus" class="admin-status"></p>
+          <button id="btnAdminClose" class="btn-cancel">關閉</button>
+        </div>
+      </div>
+
       <div id="confirmRestartModal" class="modal hidden">
         <div class="modal-box confirm-box">
           <h2>⚠️ 遊戲進行中</h2>
@@ -169,6 +192,6 @@
 
   <div id="toast" class="toast hidden">已複製戰績到剪貼簿！</div>
 
-  <script src="game.js?v=11"></script>
+  <script src="game.js?v=12"></script>
 </body>
 </html>

@@ -37,3 +37,7 @@ node server.js          # http://localhost:3081，可用 PORT 環境變數改 po
 ## 更新後記得
 
 改了 `game.js` 或 `style.css` 之後，把 `index.html` 裡的 `?v=2` 往上加一，玩家的手機才會抓到新版，不會繼續用快取的舊檔。
+
+## 管理員
+
+長按版本號 3 秒會開啟管理員面板，用 Google 登入後可以在排行榜上刪除紀錄、清理孤兒殘影。真正的權限由 `database.rules.json` 裡的管理員 UID 控制（把 `REPLACE_WITH_ADMIN_UID` 換成自己的 UID 再發布）。
