@@ -732,6 +732,34 @@ body {
   display: flex;
   gap: 10px;
 }
+#btnUploadRestart {
+  display: none;
+}
+/* Unsaved finished run: [放棄] [返回] [🚀 上傳後再玩], with 放棄 small and far from the thumb */
+.unsaved .confirm-actions {
+  gap: 8px;
+}
+.unsaved #btnConfirmRestart {
+  order: 0;
+  flex: 0 0 auto;
+  width: auto;
+  background: var(--bg-card);
+  color: #fda4af;
+  border: 1px solid rgba(244, 63, 94, 0.45);
+  font-size: 12px;
+  padding: 8px 12px;
+}
+.unsaved #btnCancelRestart {
+  order: 1;
+  flex: 0 0 auto;
+  width: auto;
+  padding: 8px 14px;
+}
+.unsaved #btnUploadRestart {
+  display: block;
+  order: 2;
+  flex: 1;
+}
 .btn-cancel {
   width: 100%;
   background: var(--bg-card);

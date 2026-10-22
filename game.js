@@ -50,7 +50,7 @@ function drawLegendIcons() {
 }
 
 // Bump on every release so players can tell whether their phone loaded the new build
-const GAME_VERSION = 'v2026.10.22i';
+const GAME_VERSION = 'v2026.10.22j';
 const DEFAULT_NAME = '電腦課高手';
 document.getElementById('gameVersion').textContent = GAME_VERSION;
 
@@ -1208,9 +1208,10 @@ function requestRestart(onConfirm = startNewGame) {
   // A finished run that isn't uploaded yet is just as easy to lose as one in progress
   const unsaved = isGameOver;
   document.getElementById('confirmRestartTitle').textContent = unsaved ? '⚠️ 成績還沒上傳' : '⚠️ 遊戲進行中';
-  document.getElementById('confirmRestartText').textContent = unsaved ? '這場成績還沒上傳，確定要放棄嗎？' : '確定要放棄這局重來嗎？';
+  document.getElementById('confirmRestartText').textContent = unsaved ? '這場成績還沒上傳，要怎麼處理？' : '確定要放棄這局重來嗎？';
   document.getElementById('btnCancelRestart').textContent = unsaved ? '返回' : '繼續玩';
   document.getElementById('btnConfirmRestart').textContent = unsaved ? '放棄' : '重來';
+  confirmRestartModal.classList.toggle('unsaved', unsaved);
   pendingRestart = onConfirm;
   isPaused = true;
   keys.left = keys.right = false;
@@ -1228,12 +1229,29 @@ function closeRestartConfirm(confirmed) {
 }
 document.getElementById('btnConfirmRestart').addEventListener('click', () => closeRestartConfirm(true));
 document.getElementById('btnCancelRestart').addEventListener('click', () => closeRestartConfirm(false));
+// Upload first, then restart; on a default name or a failed upload stay on the game-over screen
+async function uploadThenRestart() {
+  const action = pendingRestart;
+  closeRestartConfirm(false);
+  const name = modalNameInput.value.trim();
+  if (!name || name === DEFAULT_NAME) {
+    updateNameHint();
+    modalNameInput.focus();
+    showToast('✏️ 先輸入你的暱稱再上傳');
+    return;
+  }
+  if (await handleManualUpload() && action) action();
+}
+document.getElementById('btnUploadRestart').addEventListener('click', uploadThenRestart);
 
 window.addEventListener('keydown', e => {
   if (isTypingInInput()) return;
   if (isPaused) {
-    // Enter confirms, Esc / Space / R cancels, so mashing the restart key never confirms by accident
-    if (e.key === 'Enter') closeRestartConfirm(true);
+    // Enter confirms (or uploads, for an unsaved run), Esc / Space / R cancels, so mashing the restart key never discards a run
+    if (e.key === 'Enter') {
+      if (confirmRestartModal.classList.contains('unsaved')) uploadThenRestart();
+      else closeRestartConfirm(true);
+    }
     else if (e.key === 'Escape' || e.key === ' ' || e.key === 'r' || e.key === 'R') closeRestartConfirm(false);
     e.preventDefault();
     return;
