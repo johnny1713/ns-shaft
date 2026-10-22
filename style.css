@@ -478,11 +478,6 @@ body {
   text-overflow: ellipsis;
 }
 
-/* Titles can carry a suffix like ・自由落體大師, so let them wrap instead of cutting it off */
-.lb-title {
-  white-space: normal;
-}
-
 .lb-cause:empty {
   display: none;
 }
