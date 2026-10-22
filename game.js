@@ -50,7 +50,7 @@ function drawLegendIcons() {
 }
 
 // Bump on every release so players can tell whether their phone loaded the new build
-const GAME_VERSION = 'v2026.10.22d';
+const GAME_VERSION = 'v2026.10.22e';
 const DEFAULT_NAME = '電腦課高手';
 document.getElementById('gameVersion').textContent = GAME_VERSION;
 
@@ -389,7 +389,6 @@ let lastUploadedRank = null;
 let lastUploadedId = null;
 let hasUploadedCurrentRun = false;
 let isWaitingStart = true; // Each run waits for the first left/right input, so nobody dies before they're ready
-let deathSnapshotCanvas = null; // Captures the exact moment of death for the Share Card!
 let redFlashAlpha = 0;
 let screenShake = 0;
 
@@ -806,6 +805,116 @@ async function challengeGhost(item) {
 // ============================================================================
 let latestCardBlob = null;
 
+// Middle panel of the share card. Uses the real platform and kid renderers so it matches the game.
+function drawCardShaft(c, x, y, w, h, floor) {
+  const shaftW = w - 150;
+  c.save();
+  c.beginPath();
+  c.roundRect(x, y, w, h, 14);
+  c.clip();
+
+  const bg = c.createLinearGradient(0, y, 0, y + h);
+  bg.addColorStop(0, '#0b1730');
+  bg.addColorStop(1, '#020409');
+  c.fillStyle = bg;
+  c.fillRect(x, y, w, h);
+
+  // Brick walls
+  c.fillStyle = '#1e293b';
+  for (let by = y; by < y + h; by += 26) {
+    c.fillRect(x, by, 14, 24);
+    c.fillRect(x + shaftW - 14, by, 14, 24);
+  }
+
+  // Platforms scrolling past, the lower ones fading into the dark
+  const plats = [
+    ['normal', 0, 0.1], ['conveyor_right', 1, 0.24], ['spike', 0, 0.52],
+    ['trampoline', 1, 0.66], ['fake', 0.05, 0.82], ['normal', 0.9, 0.96]
+  ];
+  for (const [type, fx, fy] of plats) {
+    c.save();
+    c.globalAlpha = 1 - fy * 0.55;
+    drawPlatform(c, { x: x + 20 + fx * (shaftW - 150), y: y + fy * h, w: 104, h: 16, type, springCompress: 0, flipped: false }, 0);
+    c.restore();
+  }
+
+  // Speed lines behind the falling kid
+  const kx = x + shaftW / 2;
+  const ky = y + h * 0.42;
+  c.strokeStyle = 'rgba(250, 204, 21, 0.45)';
+  c.lineCap = 'round';
+  for (let i = 0; i < 7; i++) {
+    const lx = kx - 30 + i * 10;
+    const len = 40 + ((i * 37) % 50);
+    c.lineWidth = 2 + (i % 3);
+    c.beginPath();
+    c.moveTo(lx, ky - 40 - len);
+    c.lineTo(lx, ky - 40);
+    c.stroke();
+  }
+
+  c.save();
+  c.translate(kx, ky);
+  c.scale(3, 3);
+  c.shadowColor = '#facc15';
+  c.shadowBlur = 12;
+  drawKidSprite(0, 0, 1, 0, false, '', c);
+  c.restore();
+
+  // Depth gauge
+  const gx = x + shaftW + 40;
+  const gTop = y + 34;
+  const gBot = y + h - 34;
+  const maxFloor = Math.max(100, Math.ceil(floor / 50) * 50);
+  const floorY = f => gTop + (Math.min(f, maxFloor) / maxFloor) * (gBot - gTop);
+
+  c.fillStyle = 'rgba(148, 163, 184, 0.15)';
+  c.fillRect(gx - 4, gTop, 8, gBot - gTop);
+  const fill = c.createLinearGradient(0, gTop, 0, gBot);
+  fill.addColorStop(0, '#38bdf8');
+  fill.addColorStop(1, '#f43f5e');
+  c.fillStyle = fill;
+  c.fillRect(gx - 4, gTop, 8, floorY(floor) - gTop);
+
+  c.font = '700 12px "Segoe UI", sans-serif';
+  c.textAlign = 'left';
+  for (let f = 0; f <= maxFloor; f += maxFloor / 5) {
+    c.fillStyle = 'rgba(148, 163, 184, 0.7)';
+    c.fillRect(gx + 6, floorY(f) - 1, 8, 2);
+    c.fillText(`B${String(f).padStart(3, '0')}`, gx + 18, floorY(f) + 4);
+  }
+
+  // Rival ghost marker on the gauge (left side)
+  if (topGhost && topGhost.floor && Math.abs(floorY(topGhost.floor) - floorY(floor)) > 22) {
+    const ry = floorY(topGhost.floor);
+    c.fillStyle = 'rgba(56, 189, 248, 0.9)';
+    c.textAlign = 'right';
+    c.font = '700 12px "Segoe UI", "Noto Sans TC", sans-serif';
+    c.fillText(`👻 ${topGhost.name.slice(0, 6)}`, gx - 10, ry + 4);
+  }
+
+  // "You are here" marker
+  const py = floorY(floor);
+  c.fillStyle = '#facc15';
+  c.shadowColor = '#facc15';
+  c.shadowBlur = 10;
+  c.beginPath();
+  c.arc(gx, py, 8, 0, Math.PI * 2);
+  c.fill();
+  c.shadowBlur = 0;
+  c.textAlign = 'right';
+  c.font = '900 14px "Segoe UI", "Noto Sans TC", sans-serif';
+  c.fillText(`我在這 ▶`, gx - 12, py + 5);
+
+  c.restore();
+
+  c.strokeStyle = 'rgba(56, 189, 248, 0.45)';
+  c.lineWidth = 2;
+  c.beginPath();
+  c.roundRect(x, y, w, h, 14);
+  c.stroke();
+}
+
 function generateShareCardCanvas() {
   const card = document.createElement('canvas');
   card.width = 600;
@@ -878,19 +987,8 @@ function generateShareCardCanvas() {
   c.font = '700 15px "Segoe UI", "Noto Sans TC", sans-serif';
   c.fillText(`💀 死因：${lastCause}`, card.width / 2, 285);
 
-  // 4. Live Gameplay Death Snapshot (Framed in middle!)
-  const snapSource = deathSnapshotCanvas || canvas;
-  const snapW = 310;
-  const snapH = 385;
-  const snapX = (card.width - snapW) / 2;
-  const snapY = 318;
-
-  c.save();
-  c.strokeStyle = '#38bdf8';
-  c.lineWidth = 3;
-  c.strokeRect(snapX - 3, snapY - 3, snapW + 6, snapH + 6);
-  c.drawImage(snapSource, 0, 0, snapSource.width, snapSource.height, snapX, snapY, snapW, snapH);
-  c.restore();
+  // 4. Depth illustration: the kid plunging down a shaft, next to a B000–B100 depth gauge
+  drawCardShaft(c, 36, 318, card.width - 72, 385, floorToShow);
 
   // 5. Footer Challenge Call-to-Action
   c.fillStyle = '#22c55e';
@@ -1035,10 +1133,6 @@ function triggerGameOver(cause) {
 
   // Capture a snapshot of the death scene for the Share Card image
   draw();
-  deathSnapshotCanvas = document.createElement('canvas');
-  deathSnapshotCanvas.width = W;
-  deathSnapshotCanvas.height = H;
-  deathSnapshotCanvas.getContext('2d').drawImage(canvas, 0, 0);
 
   // Populate Game Over Modal (Wait for user to click Upload button!)
   syncInputsFromSidebar();
@@ -1467,49 +1561,49 @@ function update(rawDt) {
 // ============================================================================
 // Rendering Pipeline
 // ============================================================================
-function drawKidSprite(x, y, facing, walkCycle, isGhost = false, ghostName = '') {
-  ctx.save();
-  ctx.translate(x, y);
+function drawKidSprite(x, y, facing, walkCycle, isGhost = false, ghostName = '', c = ctx) {
+  c.save();
+  c.translate(x, y);
   if (isGhost) {
-    ctx.globalAlpha = 0.45;
-  } else if (player.invulnTimer > 0 && Math.floor(performance.now() / 60) % 2 === 0) {
-    ctx.globalAlpha = 0.4;
+    c.globalAlpha = 0.45;
+  } else if (c === ctx && player.invulnTimer > 0 && Math.floor(performance.now() / 60) % 2 === 0) {
+    c.globalAlpha = 0.4;
   }
 
   const legOffset = facing !== 0 ? Math.sin(walkCycle) * 4 : 0;
 
-  ctx.fillStyle = isGhost ? '#38bdf8' : '#facc15';
-  ctx.fillRect(-7, 7 + legOffset, 5, 9);
-  ctx.fillRect(2, 7 - legOffset, 5, 9);
+  c.fillStyle = isGhost ? '#38bdf8' : '#facc15';
+  c.fillRect(-7, 7 + legOffset, 5, 9);
+  c.fillRect(2, 7 - legOffset, 5, 9);
 
-  ctx.fillStyle = isGhost ? '#0284c7' : '#38bdf8';
-  ctx.beginPath();
-  ctx.roundRect(-10, -5, 20, 14, 4);
-  ctx.fill();
+  c.fillStyle = isGhost ? '#0284c7' : '#38bdf8';
+  c.beginPath();
+  c.roundRect(-10, -5, 20, 14, 4);
+  c.fill();
 
-  ctx.fillStyle = isGhost ? '#bae6fd' : '#fde047';
-  ctx.beginPath();
-  ctx.arc(0, -10, 8, 0, Math.PI * 2);
-  ctx.fill();
+  c.fillStyle = isGhost ? '#bae6fd' : '#fde047';
+  c.beginPath();
+  c.arc(0, -10, 8, 0, Math.PI * 2);
+  c.fill();
 
-  ctx.fillStyle = isGhost ? '#38bdf8' : '#f43f5e';
-  ctx.fillRect(-8, -16, 16, 4);
+  c.fillStyle = isGhost ? '#38bdf8' : '#f43f5e';
+  c.fillRect(-8, -16, 16, 4);
 
   const eyeX = facing * 2.5;
-  ctx.fillStyle = '#090d16';
-  ctx.fillRect(eyeX - 4, -11, 2.5, 3);
-  ctx.fillRect(eyeX + 1.5, -11, 2.5, 3);
+  c.fillStyle = '#090d16';
+  c.fillRect(eyeX - 4, -11, 2.5, 3);
+  c.fillRect(eyeX + 1.5, -11, 2.5, 3);
 
-  ctx.restore();
+  c.restore();
 
   if (isGhost && ghostName) {
-    ctx.save();
-    ctx.globalAlpha = 0.72;
-    ctx.fillStyle = '#38bdf8';
-    ctx.font = '700 11px "Segoe UI", sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(`👻 ${ghostName}`, x, y - 24);
-    ctx.restore();
+    c.save();
+    c.globalAlpha = 0.72;
+    c.fillStyle = '#38bdf8';
+    c.font = '700 11px "Segoe UI", sans-serif';
+    c.textAlign = 'center';
+    c.fillText(`👻 ${ghostName}`, x, y - 24);
+    c.restore();
   }
 }
 
