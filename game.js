@@ -190,6 +190,50 @@ class RetroAudio {
       osc.stop(now + i * 0.11 + 0.28);
     });
   }
+  // 掉進深淵的「啊～～～」：鋸齒波加顫音，經過「啊」的母音共振峰濾波，音高一路往下掉
+  fallScream() {
+    if (this.muted) return;
+    this.init();
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    const dur = 1.5;
+    const osc = this.ctx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(620, now);
+    osc.frequency.linearRampToValueAtTime(700, now + 0.15);
+    osc.frequency.exponentialRampToValueAtTime(140, now + dur);
+
+    const vibrato = this.ctx.createOscillator();
+    const vibratoDepth = this.ctx.createGain();
+    vibrato.frequency.value = 7;
+    vibratoDepth.gain.value = 18;
+    vibrato.connect(vibratoDepth);
+    vibratoDepth.connect(osc.frequency);
+
+    const out = this.ctx.createGain();
+    out.gain.setValueAtTime(0.001, now);
+    out.gain.exponentialRampToValueAtTime(0.5, now + 0.05);
+    out.gain.setValueAtTime(0.5, now + dur * 0.6);
+    out.gain.exponentialRampToValueAtTime(0.001, now + dur);
+    out.connect(this.ctx.destination);
+
+    [[800, 6, 1], [1200, 8, 0.6], [2500, 10, 0.25]].forEach(([freq, q, level]) => {
+      const formant = this.ctx.createBiquadFilter();
+      const g = this.ctx.createGain();
+      formant.type = 'bandpass';
+      formant.frequency.value = freq;
+      formant.Q.value = q;
+      g.gain.value = level;
+      osc.connect(formant);
+      formant.connect(g);
+      g.connect(out);
+    });
+
+    osc.start(now);
+    vibrato.start(now);
+    osc.stop(now + dur + 0.05);
+    vibrato.stop(now + dur + 0.05);
+  }
 }
 
 const sfx = new RetroAudio();
@@ -367,37 +411,24 @@ function showToast(msg) {
 }
 
 // ============================================================================
-// Online Leaderboard API & Manual Upload (With GitHub Pages Static Fallback!)
+// Online Leaderboard (Firebase Realtime Database, or server.js API when FIREBASE_DB_URL is empty)
+// 讀取或上傳失敗時會明確顯示錯誤，不再偷偷改用本機假資料，避免每台裝置看到的排行榜不一樣。
 // ============================================================================
-function getLocalFallbackDB() {
-  try {
-    const raw = localStorage.getItem('nss_static_db');
-    if (raw) return JSON.parse(raw);
-  } catch (e) {}
+const LEADERBOARD_SIZE = 20;
+const ghostCache = new Map(); // id -> frames, so ghosts are downloaded only once
+let urlChallenge = null;      // Friend challenge from a LINE share link (kept in memory, never uploaded)
+let leaderboardOnline = false;
 
-  // Default seed records for static GitHub Pages mode
-  const simGhost = [];
-  let gx = 240, gy = 230, cam = 0;
-  for (let t = 0; t < 480; t++) {
-    cam += (105 + t * 0.12) * 0.1;
-    const idx = Math.max(0, Math.round((gy - 220) / PLAT_GAP_Y));
-    let p = createPlatform(idx);
-    if (p.type === 'spike') p = createPlatform(idx + 1);
-    const tx = p.x + p.w / 2;
-    gx += (tx - gx) * 0.38;
-    gy = Math.max(cam + 90, Math.min(cam + 460, p.y - 16));
-    simGhost.push([Math.round(gx), Math.round(gy), tx > gx + 3 ? 1 : tx < gx - 3 ? -1 : 0]);
-  }
+function firebaseBase() {
+  return FIREBASE_DB_URL.replace(/\/+$/, '');
+}
 
-  return {
-    records: [
-      { id: 'seed-1', name: '⚡電腦課之神', floor: 64, timeMs: 68400, title: '🔥 地下深淵統治者', cause: '被彈簧床送去撞天花板', hasGhost: true, ghost: simGhost },
-      { id: 'seed-2', name: '七年級老司機', floor: 48, timeMs: 51200, title: '⚡ 電腦課風雲人物', cause: '踩到尖刺地板失血過多', hasGhost: false, ghost: [] },
-      { id: 'seed-3', name: '阿凱不想上班', floor: 31, timeMs: 34900, title: '⚡ 電腦課風雲人物', cause: '墜入無底深淵', hasGhost: false, ghost: [] },
-      { id: 'seed-4', name: '小明', floor: 18, timeMs: 21500, title: '👟 下樓梯熟練工', cause: '被天花板尖刺夾扁', hasGhost: false, ghost: [] }
-    ],
-    stats: { totalGames: 218, maxFloorEver: 64, totalFloorsDescended: 4890 }
-  };
+function recordHasGhost(r) {
+  return (Array.isArray(r.ghost) && r.ghost.length > 5) || (r.ghostLen || 0) > 5;
+}
+
+function sortRecords(records) {
+  return records.sort((a, b) => (b.floor || 0) - (a.floor || 0) || (b.timeMs || 0) - (a.timeMs || 0));
 }
 
 // Check if URL has a shared friend challenge (?c=Name&f=42&t=38500&g=...)
@@ -409,7 +440,6 @@ function importUrlChallengeIfPresent() {
     if (!cName || !cFloor) return;
     const cTime = Number(params.get('t')) || cFloor * 1100;
     const cCause = params.get('d') || '極限挑戰';
-    const cTitle = computeTitle(cFloor, cCause);
     let cGhost = [];
     const gParam = params.get('g');
     if (gParam) {
@@ -418,131 +448,130 @@ function importUrlChallengeIfPresent() {
         return [x || 240, y || 230, dir || 0];
       });
     }
-    const db = getLocalFallbackDB();
-    const challengeId = 'friend-' + cName + '-' + cFloor;
-    if (!db.records.some(r => r.id === challengeId)) {
-      db.records.push({
-        id: challengeId,
-        name: `🔥${cName}`,
-        floor: cFloor,
-        timeMs: cTime,
-        title: cTitle,
-        cause: cCause,
-        hasGhost: cGhost.length > 5,
-        ghost: cGhost
-      });
-      db.records.sort((a, b) => b.floor - a.floor || b.timeMs - a.timeMs);
-      if (cFloor > db.stats.maxFloorEver) db.stats.maxFloorEver = cFloor;
-      localStorage.setItem('nss_static_db', JSON.stringify(db));
+    urlChallenge = {
+      id: 'friend-' + cName + '-' + cFloor,
+      name: `🔥${cName}`,
+      floor: cFloor,
+      timeMs: cTime,
+      title: computeTitle(cFloor, cCause),
+      cause: cCause,
+      isFriendChallenge: true,
+      hasGhost: cGhost.length > 5
+    };
+    if (urlChallenge.hasGhost) {
+      ghostCache.set(urlChallenge.id, cGhost);
+      selectedGhostId = urlChallenge.id;
     }
-    selectedGhostId = challengeId;
     setTimeout(() => showToast(`🔥 收到來自【${cName} (地下 B${String(cFloor).padStart(3, '0')} 層)】的殘影挑戰！`), 400);
   } catch (e) {}
 }
 
-function applyStaticFallbackData(ghostId) {
-  const db = getLocalFallbackDB();
-  let targetGhost = db.records.find(r => r.id === ghostId && Array.isArray(r.ghost) && r.ghost.length > 5);
-  if (!targetGhost) targetGhost = db.records.find(r => Array.isArray(r.ghost) && r.ghost.length > 5);
-
-  leaderboardData = {
-    records: db.records.map(r => ({ ...r, hasGhost: Array.isArray(r.ghost) && r.ghost.length > 5 })),
-    deaths: [],
-    stats: db.stats
-  };
-  if (targetGhost) {
-    topGhost = { id: targetGhost.id, name: targetGhost.name, floor: targetGhost.floor, frames: targetGhost.ghost };
-    selectedGhostId = targetGhost.id;
-    ghostStatusLabel.textContent = `👻 對戰殘影：${topGhost.name} (B${topGhost.floor})`;
+async function fetchRecordsFromFirebase() {
+  const res = await fetch(`${firebaseBase()}/records.json`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Firebase read error ${res.status}`);
+  const raw = await res.json();
+  const records = raw && typeof raw === 'object'
+    ? Object.entries(raw).map(([key, val]) => ({ ...val, id: key }))
+    : [];
+  for (const r of records) {
+    // Older records stored the ghost inline; cache it and drop it from the list data
+    if (Array.isArray(r.ghost) && r.ghost.length > 5) ghostCache.set(r.id, r.ghost);
+    r.hasGhost = recordHasGhost(r);
+    delete r.ghost;
   }
-  renderLeaderboard();
+  sortRecords(records);
+  return {
+    records,
+    stats: {
+      totalGames: records.length,
+      maxFloorEver: records.reduce((m, r) => Math.max(m, r.floor || 1), 1),
+      totalFloorsDescended: records.reduce((s, r) => s + (r.floor || 0), 0)
+    }
+  };
 }
 
-async function fetchFromFirebase(ghostId) {
-  const baseUrl = FIREBASE_DB_URL.replace(/\/+$/, '');
-  const res = await fetch(`${baseUrl}/records.json`);
-  if (!res.ok) throw new Error('Firebase read error');
-  const raw = await res.json();
-
-  let records = [];
-  if (raw && typeof raw === 'object') {
-    records = Object.entries(raw).map(([key, val]) => ({
-      id: key,
-      ...val,
-      hasGhost: Array.isArray(val.ghost) && val.ghost.length > 5
-    }));
+async function fetchRecordsFromServer(ghostId) {
+  const url = ghostId ? `/api/leaderboard?ghostId=${encodeURIComponent(ghostId)}` : '/api/leaderboard';
+  const res = await fetch(url, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Server read error ${res.status}`);
+  const data = await res.json();
+  if (data.topGhost && Array.isArray(data.topGhost.frames)) {
+    ghostCache.set(data.topGhost.id, data.topGhost.frames);
   }
+  return { records: data.records || [], stats: data.stats };
+}
 
-  // If Firebase DB is brand new & empty, seed initial default records so players have a ghost to race!
-  if (records.length === 0) {
-    const seedDb = getLocalFallbackDB();
-    for (const rec of seedDb.records) {
-      await fetch(`${baseUrl}/records.json`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(rec)
-      }).catch(() => {});
-    }
-    records = seedDb.records;
-  }
+// Download a ghost only when it is actually going to be raced
+async function loadGhostFrames(id) {
+  if (ghostCache.has(id)) return ghostCache.get(id);
+  if (!FIREBASE_DB_URL) return null; // server.js mode: frames come with the leaderboard response
+  const res = await fetch(`${firebaseBase()}/ghosts/${encodeURIComponent(id)}.json`);
+  if (!res.ok) return null;
+  const frames = await res.json();
+  if (!Array.isArray(frames)) return null;
+  ghostCache.set(id, frames);
+  return frames;
+}
 
-  records.sort((a, b) => (b.floor || 0) - (a.floor || 0) || (b.timeMs || 0) - (a.timeMs || 0));
-
-  const totalGames = records.length;
-  const maxFloorEver = records.reduce((m, r) => Math.max(m, r.floor || 1), 1);
-  const totalFloorsDescended = records.reduce((s, r) => s + (r.floor || 0), 0);
-
-  let targetGhostRec = null;
-  if (ghostId) {
-    targetGhostRec = records.find(r => r.id === ghostId && Array.isArray(r.ghost) && r.ghost.length > 5);
-  }
-  if (!targetGhostRec) {
-    targetGhostRec = records.find(r => Array.isArray(r.ghost) && r.ghost.length > 5);
-  }
-
-  leaderboardData = {
-    records: records.slice(0, 20),
-    deaths: [],
-    stats: { totalGames, maxFloorEver, totalFloorsDescended }
-  };
-
-  if (targetGhostRec) {
-    topGhost = {
-      id: targetGhostRec.id,
-      name: targetGhostRec.name,
-      floor: targetGhostRec.floor,
-      frames: targetGhostRec.ghost
-    };
-    selectedGhostId = targetGhostRec.id;
-    ghostStatusLabel.textContent = `👻 對戰殘影：${topGhost.name} (B${topGhost.floor})`;
-  }
-  renderLeaderboard();
+async function selectGhost(records) {
+  const withGhost = records.filter(r => r.hasGhost);
+  const target = withGhost.find(r => r.id === selectedGhostId) || withGhost[0];
+  if (!target) return;
+  if (topGhost && topGhost.id === target.id) return;
+  const frames = await loadGhostFrames(target.id);
+  if (!frames) return;
+  topGhost = { id: target.id, name: target.name, floor: target.floor, frames };
+  selectedGhostId = target.id;
+  ghostStatusLabel.textContent = `👻 對戰殘影：${topGhost.name} (B${topGhost.floor})`;
 }
 
 async function fetchLeaderboard(ghostId = selectedGhostId) {
-  if (FIREBASE_DB_URL) {
-    try {
-      await fetchFromFirebase(ghostId);
-      return;
-    } catch (err) {
-      console.warn('[Johnny_LOG] Firebase fetch fallback:', err);
-    }
-  }
   try {
-    const url = ghostId ? `/api/leaderboard?ghostId=${encodeURIComponent(ghostId)}` : '/api/leaderboard';
-    const res = await fetch(url);
-    if (!res.ok) throw new Error('Static mode');
-    const data = await res.json();
-    leaderboardData = data;
-    if (data.topGhost && Array.isArray(data.topGhost.frames)) {
-      topGhost = data.topGhost;
-      selectedGhostId = data.topGhost.id || null;
-      ghostStatusLabel.textContent = `👻 對戰殘影：${topGhost.name} (B${topGhost.floor})`;
-    }
-    renderLeaderboard();
+    const data = FIREBASE_DB_URL ? await fetchRecordsFromFirebase() : await fetchRecordsFromServer(ghostId);
+    const records = urlChallenge ? sortRecords([...data.records, urlChallenge]) : data.records;
+    leaderboardData = { records: records.slice(0, LEADERBOARD_SIZE), deaths: [], stats: data.stats };
+    leaderboardOnline = true;
+    selectedGhostId = ghostId;
+    await selectGhost(records);
   } catch (err) {
-    applyStaticFallbackData(ghostId);
+    console.warn('[Johnny_LOG] Leaderboard fetch failed:', err);
+    leaderboardOnline = false;
   }
+  renderLeaderboard();
+}
+
+async function uploadToFirebase(payload) {
+  const { ghost, ...record } = payload;
+  record.ghostLen = ghost.length;
+  const postRes = await fetch(`${firebaseBase()}/records.json`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(record)
+  });
+  if (!postRes.ok) throw new Error(`Firebase POST failed ${postRes.status}`);
+  const id = (await postRes.json()).name;
+  if (ghost.length > 5) {
+    // Ghost is stored separately so the leaderboard list stays small
+    const ghostRes = await fetch(`${firebaseBase()}/ghosts/${encodeURIComponent(id)}.json`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(ghost)
+    });
+    if (ghostRes.ok) ghostCache.set(id, ghost);
+  }
+  return id;
+}
+
+async function uploadToServer(payload) {
+  const res = await fetch('/api/submit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) throw new Error(`Server POST failed ${res.status}`);
+  const result = await res.json();
+  if (payload.ghost.length > 5) ghostCache.set(result.id, payload.ghost);
+  return result.id;
 }
 
 async function handleManualUpload() {
@@ -553,7 +582,7 @@ async function handleManualUpload() {
   btnUploadScore.textContent = '⏳ 正在上傳成績與殘影...';
 
   const payload = {
-    name: modalNameInput.value.trim() || '無名小朋友',
+    name: (modalNameInput.value.trim() || '無名小朋友').slice(0, 16),
     floor: currentFloor,
     timeMs: Math.round(elapsedMs),
     cause: lastCause,
@@ -564,74 +593,22 @@ async function handleManualUpload() {
     ghost: useFixedSeed ? recordedGhost : []
   };
 
-  // 1. If Google Firebase Realtime Database is configured, upload directly to Firebase!
-  if (FIREBASE_DB_URL) {
-    try {
-      const baseUrl = FIREBASE_DB_URL.replace(/\/+$/, '');
-      const postRes = await fetch(`${baseUrl}/records.json`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      if (!postRes.ok) throw new Error('Firebase POST failed');
-      const postData = await postRes.json();
-      const newKey = postData.name;
-      hasUploadedCurrentRun = true;
-      selectedGhostId = newKey;
-      await fetchFromFirebase(newKey);
-      const rank = leaderboardData.records.findIndex(r => r.id === newKey) + 1 || 1;
-      lastUploadedRank = rank;
-      document.getElementById('modalRankStat').textContent = `#${rank}`;
-      btnUploadScore.textContent = `✅ 已同步至全服雲端排行榜！(第 #${rank} 名)`;
-      showToast(`🏆 成績已同步至 Google Firebase 全服第 #${rank} 名！`);
-      return;
-    } catch (err) {
-      console.warn('[Johnny_LOG] Firebase upload error:', err);
-    }
-  }
-
   try {
-    const res = await fetch('/api/submit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    if (!res.ok) throw new Error('Static mode');
-    const result = await res.json();
+    const newId = FIREBASE_DB_URL ? await uploadToFirebase(payload) : await uploadToServer(payload);
     hasUploadedCurrentRun = true;
-    lastUploadedRank = result.rank;
-    document.getElementById('modalRankStat').textContent = result.rank ? `#${result.rank}` : '已上榜';
-    btnUploadScore.textContent = `✅ 已成功上傳排行榜！(全服第 #${result.rank || 1} 名)`;
-    showToast(`🏆 成績已上傳！你目前排全服第 #${result.rank || 1} 名！`);
-    await fetchLeaderboard(selectedGhostId);
+    await fetchLeaderboard(newId);
+    const rank = leaderboardOnline ? leaderboardData.records.findIndex(r => r.id === newId) + 1 : 0;
+    lastUploadedRank = rank || null;
+    document.getElementById('modalRankStat').textContent = rank ? `#${rank}` : '已上榜';
+    btnUploadScore.textContent = rank
+      ? `✅ 已同步至全服排行榜！(第 #${rank} 名)`
+      : '✅ 已同步至全服排行榜！';
+    showToast(rank ? `🏆 成績已上傳！你目前排全服第 #${rank} 名！` : '🏆 成績已上傳！');
   } catch (err) {
-    // Fallback for static GitHub Pages hosting
-    const db = getLocalFallbackDB();
-    const newId = 'local-' + Date.now();
-    db.records.push({
-      id: newId,
-      name: payload.name,
-      floor: payload.floor,
-      timeMs: payload.timeMs,
-      title: payload.title,
-      cause: payload.cause,
-      hasGhost: payload.ghost.length > 5,
-      ghost: payload.ghost
-    });
-    db.records.sort((a, b) => b.floor - a.floor || b.timeMs - a.timeMs);
-    db.stats.totalGames += 1;
-    db.stats.totalFloorsDescended += payload.floor;
-    if (payload.floor > db.stats.maxFloorEver) db.stats.maxFloorEver = payload.floor;
-    const rank = db.records.findIndex(r => r.id === newId) + 1;
-    localStorage.setItem('nss_static_db', JSON.stringify(db));
-
-    hasUploadedCurrentRun = true;
-    lastUploadedRank = rank;
-    selectedGhostId = newId;
-    document.getElementById('modalRankStat').textContent = `#${rank}`;
-    btnUploadScore.textContent = `✅ 已登入排行榜！(第 #${rank} 名)`;
-    showToast(`🏆 成績已登入排行榜第 #${rank} 名！點 LINE 分享可把殘影傳給朋友挑戰！`);
-    applyStaticFallbackData(newId);
+    console.warn('[Johnny_LOG] Upload failed:', err);
+    btnUploadScore.disabled = false;
+    btnUploadScore.textContent = '⚠️ 上傳失敗，點此重試';
+    showToast('⚠️ 上傳失敗，請檢查網路後再試一次');
   }
 }
 
@@ -643,7 +620,17 @@ function renderLeaderboard() {
   leaderboardList.innerHTML = '';
   const list = leaderboardData.records || [];
 
+  if (!leaderboardOnline) {
+    const warn = document.createElement('div');
+    warn.className = 'loading-text lb-offline';
+    warn.textContent = list.length
+      ? '⚠️ 連不上排行榜，以下是上次載入的資料，稍後自動重試'
+      : '⚠️ 連不上排行榜，稍後自動重試...';
+    leaderboardList.appendChild(warn);
+  }
+
   if (list.length === 0) {
+    if (!leaderboardOnline) return;
     leaderboardList.innerHTML = '<div class="loading-text">暫無紀錄，快成為第一名！</div>';
     return;
   }
@@ -678,10 +665,17 @@ function renderLeaderboard() {
     row.querySelector('.lb-cause').textContent = item.title ? `${item.title} (${item.cause})` : item.cause;
 
     if (item.hasGhost) {
-      row.addEventListener('click', () => {
+      row.addEventListener('click', async () => {
+        const frames = await loadGhostFrames(item.id);
+        if (!frames) {
+          showToast('⚠️ 殘影下載失敗，請稍後再試');
+          return;
+        }
         selectedGhostId = item.id;
+        topGhost = { id: item.id, name: item.name, floor: item.floor, frames };
         toggleGhostInput.checked = true;
-        fetchLeaderboard(item.id);
+        ghostStatusLabel.textContent = `👻 對戰殘影：${topGhost.name} (B${topGhost.floor})`;
+        renderLeaderboard();
         showToast(`👻 已切換對戰殘影為：${item.name} (B${item.floor}層)！`);
       });
     }
@@ -915,7 +909,8 @@ function triggerGameOver(cause) {
   isGameOver = true;
   lastCause = cause;
   lastTitle = computeTitle(currentFloor, cause);
-  sfx.gameOver();
+  if (cause === '墜入無底深淵') sfx.fallScream();
+  else sfx.gameOver();
   screenShake = 14;
   redFlashAlpha = 0.55;
   spawnParticles(player.x, player.y, '#f43f5e', 28);

@@ -1,0 +1,30 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "records": {
+      ".read": true,
+      "$id": {
+        ".write": "!data.exists() && newData.exists()",
+        ".validate": "newData.hasChildren(['name', 'floor', 'timeMs'])",
+        "name": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 16" },
+        "floor": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 9999" },
+        "timeMs": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+        "cause": { ".validate": "newData.isString() && newData.val().length <= 40" },
+        "title": { ".validate": "newData.isString() && newData.val().length <= 40" },
+        "deathX": { ".validate": "newData.isNumber()" },
+        "deathY": { ".validate": "newData.isNumber()" },
+        "date": { ".validate": "newData.isString() && newData.val().length <= 40" },
+        "ghostLen": { ".validate": "newData.isNumber() && newData.val() <= 1500" },
+        "ghost": { ".validate": "false" },
+        "$other": { ".validate": "false" }
+      }
+    },
+    "ghosts": {
+      ".read": true,
+      "$id": {
+        ".write": "!data.exists() && newData.exists() && root.child('records').child($id).exists()"
+      }
+    }
+  }
+}

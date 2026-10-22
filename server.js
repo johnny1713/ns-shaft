@@ -5,7 +5,9 @@ const os = require('os');
 
 const PORT = process.env.PORT || 3081;
 const DATA_FILE = path.join(__dirname, 'shaft_leaderboard.json');
-const PUBLIC_DIR = path.join(__dirname, 'public');
+const STATIC_DIR = __dirname;
+// Only these files are served, so server.js and the leaderboard data can't be downloaded
+const STATIC_FILES = new Set(['/index.html', '/game.js', '/style.css']);
 
 function mulberry32(a) {
   return function () {
@@ -309,14 +311,12 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  let filePath = url.pathname === '/' ? '/index.html' : url.pathname;
-  const safePath = path.normalize(filePath).replace(/^(\.\.[\/\\])+/, '');
-  const fullPath = path.join(PUBLIC_DIR, safePath);
-
-  if (!fullPath.startsWith(PUBLIC_DIR)) {
-    res.writeHead(403);
-    return res.end('Forbidden');
+  const filePath = url.pathname === '/' ? '/index.html' : url.pathname;
+  if (!STATIC_FILES.has(filePath)) {
+    res.writeHead(404);
+    return res.end('Not found');
   }
+  const fullPath = path.join(STATIC_DIR, filePath);
 
   fs.readFile(fullPath, (err, content) => {
     if (err) {
