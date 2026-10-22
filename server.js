@@ -233,7 +233,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     return sendJson(res, 200, {
-      records: db.records.slice(0, 15).map(({ ghost, ...rest }) => ({
+      records: db.records.slice(0, 50).map(({ ghost, ...rest }) => ({
         ...rest,
         hasGhost: Array.isArray(ghost) && ghost.length > 5
       })),

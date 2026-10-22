@@ -50,7 +50,7 @@ function drawLegendIcons() {
 }
 
 // Bump on every release so players can tell whether their phone loaded the new build
-const GAME_VERSION = 'v2026.10.22e';
+const GAME_VERSION = 'v2026.10.22f';
 const DEFAULT_NAME = '電腦課高手';
 document.getElementById('gameVersion').textContent = GAME_VERSION;
 
@@ -472,9 +472,9 @@ function updateGhostLabel() {
 // Online Leaderboard (Firebase Realtime Database, or server.js API when FIREBASE_DB_URL is empty)
 // 讀取或上傳失敗時會明確顯示錯誤，不再偷偷改用本機假資料，避免每台裝置看到的排行榜不一樣。
 // ============================================================================
-const LEADERBOARD_SIZE = 20;
+const LEADERBOARD_SIZE = 50;   // Same as the ghost cutoff, so every visible row can be raced
 const GHOST_MAX_FRAMES = 18000; // 30 minutes at 10 frames/s
-const GHOST_KEEP_TOP = 50;       // only runs that would rank in the top 50 upload a ghost
+const GHOST_KEEP_TOP = LEADERBOARD_SIZE; // only runs that would rank on the leaderboard upload a ghost
 const ghostCache = new Map(); // id -> frames, so ghosts are downloaded only once
 let urlChallenge = null;      // Friend challenge from a LINE share link (kept in memory, never uploaded)
 let leaderboardOnline = false;
