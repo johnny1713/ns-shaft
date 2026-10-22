@@ -50,7 +50,7 @@ function drawLegendIcons() {
 }
 
 // Bump on every release so players can tell whether their phone loaded the new build
-const GAME_VERSION = 'v2026.10.22h';
+const GAME_VERSION = 'v2026.10.22i';
 const DEFAULT_NAME = '電腦課高手';
 document.getElementById('gameVersion').textContent = GAME_VERSION;
 
@@ -1201,10 +1201,16 @@ const confirmRestartModal = document.getElementById('confirmRestartModal');
 let isPaused = false;
 let pendingRestart = null;
 function requestRestart(onConfirm = startNewGame) {
-  if (isGameOver || isWaitingStart) {
+  if (isWaitingStart || (isGameOver && hasUploadedCurrentRun)) {
     onConfirm();
     return;
   }
+  // A finished run that isn't uploaded yet is just as easy to lose as one in progress
+  const unsaved = isGameOver;
+  document.getElementById('confirmRestartTitle').textContent = unsaved ? '⚠️ 成績還沒上傳' : '⚠️ 遊戲進行中';
+  document.getElementById('confirmRestartText').textContent = unsaved ? '這場成績還沒上傳，確定要放棄嗎？' : '確定要放棄這局重來嗎？';
+  document.getElementById('btnCancelRestart').textContent = unsaved ? '返回' : '繼續玩';
+  document.getElementById('btnConfirmRestart').textContent = unsaved ? '放棄' : '重來';
   pendingRestart = onConfirm;
   isPaused = true;
   keys.left = keys.right = false;
@@ -1321,7 +1327,7 @@ document.getElementById('btnRestart').addEventListener('click', e => {
   e.currentTarget.blur(); // Keep Space from re-clicking the focused button
   requestRestart();
 });
-document.getElementById('btnRetryModal').addEventListener('click', startNewGame);
+document.getElementById('btnRetryModal').addEventListener('click', () => requestRestart());
 
 document.getElementById('btnMute').addEventListener('click', e => {
   sfx.muted = !sfx.muted;
