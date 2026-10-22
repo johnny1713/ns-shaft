@@ -50,7 +50,7 @@ function drawLegendIcons() {
 }
 
 // Bump on every release so players can tell whether their phone loaded the new build
-const GAME_VERSION = 'v2026.10.22q';
+const GAME_VERSION = 'v2026.10.22r';
 const DEFAULT_NAME = '電腦課高手';
 document.getElementById('gameVersion').textContent = GAME_VERSION;
 
@@ -780,7 +780,8 @@ function renderLeaderboard() {
     `;
     row.querySelector('.lb-name').textContent = item.name;
     // Title and cause on separate lines so a long title never hides how they died
-    row.querySelector('.lb-title').textContent = (item.title || '').replace(/・(天花板刺蝟|鐵布衫苦主|自由落體大師)$/, ''); // The suffix just restates the cause shown below
+    // Recompute from floor so old records pick up title changes; no cause suffix since the cause is shown below
+    row.querySelector('.lb-title').textContent = computeTitle(item.floor, '');
     row.querySelector('.lb-death').textContent = item.cause ? `💀 ${item.cause}` : '';
 
     if (item.hasGhost) {
