@@ -1,3 +1,5 @@
+"""Prints the floor .validate expression for database.rules.json.
+Rerun whenever the scroll speed curve in game.js changes."""
 import json, sys
 # Simulate the camera exactly like game.js to get T(F): seconds until floor F is reached
 dt=1/240; cam=0; t=0; F=1; T={1:0.0}

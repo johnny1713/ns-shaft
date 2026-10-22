@@ -1353,6 +1353,7 @@ function update(rawDt) {
     }
 
     // 1. Authentic NS-Shaft speed curve: steps up every 10 floors
+    // database.rules.json checks floor vs. time against this curve; rerun tools/gen_floor_rule.py if it changes
     const speedLevel = Math.floor(currentFloor / 10);
     scrollSpeed = 105 + Math.min(12, speedLevel) * 14 + (currentFloor % 10) * 0.8;
     cameraY += scrollSpeed * dt;
