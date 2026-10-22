@@ -116,6 +116,7 @@ body {
 }
 
 .floor-display {
+  white-space: nowrap;
   font-size: 16px;
   font-weight: 900;
   color: var(--text-main);
@@ -135,12 +136,6 @@ body {
 
 .hud-actions {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.hud-action-row {
-  display: flex;
   gap: 4px;
 }
 
@@ -149,9 +144,10 @@ body {
   color: var(--text-main);
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 7px;
-  padding: 5px 8px;
-  font-size: 11px;
+  padding: 8px 9px;
+  font-size: 13px;
   font-weight: 700;
+  white-space: nowrap;
   cursor: pointer;
   transition: all 0.15s;
 }
@@ -439,9 +435,14 @@ body {
 .lb-cause {
   font-size: 10px;
   color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .lb-right {
+  margin-left: auto;
+  flex-shrink: 0;
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
@@ -458,23 +459,95 @@ body {
   display: block;
 }
 
-.sidebar-share-group {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
+.lb-pk {
+  flex-shrink: 0;
+  margin-left: 8px;
+  background: rgba(56, 189, 248, 0.15);
+  color: var(--cyan);
+  border: 1px solid rgba(56, 189, 248, 0.5);
+  border-radius: 7px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.lb-item.active-ghost .lb-pk {
+  background: var(--cyan);
+  color: #04121d;
+}
+
+.ghost-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ghost-status {
+  font-size: 12px;
+  color: #cbd5e1;
+}
+
+.switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 40px;
+  height: 22px;
+  cursor: pointer;
+}
+
+.switch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.switch-track {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  transition: background 0.15s;
+}
+
+.switch-track::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s;
+}
+
+.switch input:checked + .switch-track {
+  background: var(--cyan);
+}
+
+.switch input:checked + .switch-track::after {
+  transform: translateX(18px);
+}
+
+.hidden {
+  display: none !important;
 }
 
 /* Modal & Upload / Share Buttons */
 .modal {
-  position: absolute;
+  position: fixed;
   inset: 0;
   background: rgba(5, 7, 15, 0.88);
   backdrop-filter: blur(6px);
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 20;
-  padding: 10px;
+  z-index: 50;
+  padding: 16px;
+  overflow-y: auto;
 }
 
 .modal.hidden {
@@ -681,6 +754,8 @@ body {
 
 .card-preview-img {
   width: 100%;
+  max-height: 60vh;
+  object-fit: contain;
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.2);
   user-select: auto;
@@ -693,23 +768,30 @@ body {
   gap: 8px;
 }
 
+.modal-buttons .btn-copy {
+  flex: 1;
+}
+
 .btn-primary {
   flex: 1;
   background: var(--yellow);
   color: #090d16;
   border: none;
   border-radius: 8px;
-  padding: 9px;
+  padding: 11px;
   font-weight: 800;
-  font-size: 12px;
+  font-size: 14px;
   cursor: pointer;
 }
 
 .toast {
   position: fixed;
-  bottom: 20px;
+  bottom: calc(20px + env(safe-area-inset-bottom));
   left: 50%;
   transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  text-align: center;
   background: var(--green);
   color: #051b11;
   font-weight: 800;
@@ -727,17 +809,58 @@ body {
 
 @media (max-width: 860px) {
   body {
-    padding: 6px;
+    padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
     align-items: flex-start;
   }
   .app-shell {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     max-width: 480px;
     gap: 12px;
   }
+  /* HUD + game + controls fit in one screen, so nobody has to scroll mid-run */
+  .canvas-wrap {
+    width: min(100%, calc((100vh - 190px) * 0.8));
+    width: min(100%, calc((100dvh - 190px) * 0.8));
+    margin: 0 auto;
+  }
   .touch-btn {
-    padding: 16px 10px;
+    padding: 18px 10px;
     font-size: 17px;
+  }
+  .hud-top {
+    padding: 6px 8px;
+    gap: 6px;
+  }
+  .hud-life-box {
+    min-width: 0;
+    flex-shrink: 1;
+  }
+  .life-bars {
+    gap: 2px;
+  }
+  .floor-display {
+    font-size: 13px;
+  }
+  .floor-display span {
+    font-size: 19px;
+  }
+  .btn-icon {
+    padding: 7px 7px;
+    font-size: 12px;
+  }
+  .hud-sub {
+    display: none;
+  }
+  .life-pip {
+    width: 6px;
+    height: 13px;
+  }
+  .legend-bar {
+    justify-content: center;
+    font-size: 10px;
+  }
+  .modal-box {
+    padding: 14px;
   }
 }
 

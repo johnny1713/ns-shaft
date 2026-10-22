@@ -340,14 +340,15 @@ let isGameOver = false;
 let lastCause = '極限挑戰中';
 let lastTitle = '👟 下樓梯挑戰者';
 let lastUploadedRank = null;
+let lastUploadedId = null;
 let hasUploadedCurrentRun = false;
+let isWaitingStart = true; // Each run waits for the first left/right input, so nobody dies before they're ready
 let deathSnapshotCanvas = null; // Captures the exact moment of death for the Share Card!
 let redFlashAlpha = 0;
 let screenShake = 0;
 
 // Ghost Recording & Playback
 let recordedGhost = [];
-let ghostTimer = 0;
 let topGhost = null;
 let selectedGhostId = null;
 
@@ -404,10 +405,22 @@ function spawnParticles(x, y, color, count = 12) {
   }
 }
 
+let toastTimer = null;
 function showToast(msg) {
   toastEl.textContent = msg;
   toastEl.classList.remove('hidden');
-  setTimeout(() => toastEl.classList.add('hidden'), 2800);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.add('hidden'), 2800);
+}
+
+function updateGhostLabel() {
+  if (!useFixedSeed) {
+    ghostStatusLabel.textContent = '🎲 隨機地圖沒有殘影，切回「📅 同圖」才能 PK';
+  } else if (!topGhost) {
+    ghostStatusLabel.textContent = '👻 還沒有可以 PK 的殘影';
+  } else {
+    ghostStatusLabel.textContent = `👻 PK 對手：${topGhost.name} (${formatFloor(topGhost.floor)})`;
+  }
 }
 
 // ============================================================================
@@ -431,10 +444,15 @@ function sortRecords(records) {
   return records.sort((a, b) => (b.floor || 0) - (a.floor || 0) || (b.timeMs || 0) - (a.timeMs || 0));
 }
 
-// Check if URL has a shared friend challenge (?c=Name&f=42&t=38500&g=...)
-function importUrlChallengeIfPresent() {
+// Shared challenge link: ?r=<record id> (current), or the older ?c=Name&f=42&t=38500&g=... form
+async function importUrlChallengeIfPresent() {
+  const params = new URLSearchParams(window.location.search);
+  const recordId = params.get('r');
+  if (recordId) {
+    await importRecordChallenge(recordId);
+    return;
+  }
   try {
-    const params = new URLSearchParams(window.location.search);
     const cName = params.get('c');
     const cFloor = Number(params.get('f'));
     if (!cName || !cFloor) return;
@@ -463,6 +481,23 @@ function importUrlChallengeIfPresent() {
       selectedGhostId = urlChallenge.id;
     }
     setTimeout(() => showToast(`🔥 收到來自【${cName} (地下 B${String(cFloor).padStart(3, '0')} 層)】的殘影挑戰！`), 400);
+  } catch (e) {}
+}
+
+async function importRecordChallenge(id) {
+  try {
+    if (!FIREBASE_DB_URL) {
+      selectedGhostId = id;
+      return;
+    }
+    const res = await fetch(`${firebaseBase()}/records/${encodeURIComponent(id)}.json`);
+    const rec = res.ok ? await res.json() : null;
+    if (!rec || typeof rec !== 'object') return;
+    if (Array.isArray(rec.ghost) && rec.ghost.length > 5) ghostCache.set(id, rec.ghost);
+    urlChallenge = { ...rec, id, hasGhost: recordHasGhost(rec) };
+    delete urlChallenge.ghost;
+    if (urlChallenge.hasGhost) selectedGhostId = id;
+    setTimeout(() => showToast(`🔥 ${rec.name} (${formatFloor(rec.floor)}) 向你下戰帖！準備好就開始`), 400);
   } catch (e) {}
 }
 
@@ -522,17 +557,20 @@ async function selectGhost(records) {
   if (!frames) return;
   topGhost = { id: target.id, name: target.name, floor: target.floor, frames };
   selectedGhostId = target.id;
-  ghostStatusLabel.textContent = `👻 對戰殘影：${topGhost.name} (B${topGhost.floor})`;
+  updateGhostLabel();
 }
 
 async function fetchLeaderboard(ghostId = selectedGhostId) {
   try {
     const data = FIREBASE_DB_URL ? await fetchRecordsFromFirebase() : await fetchRecordsFromServer(ghostId);
-    const records = urlChallenge ? sortRecords([...data.records, urlChallenge]) : data.records;
+    const records = urlChallenge && !data.records.some(r => r.id === urlChallenge.id)
+      ? sortRecords([...data.records, urlChallenge])
+      : data.records;
     leaderboardData = { records: records.slice(0, LEADERBOARD_SIZE), deaths: [], stats: data.stats };
     leaderboardOnline = true;
     selectedGhostId = ghostId;
     await selectGhost(records);
+    updateGhostLabel();
   } catch (err) {
     console.warn('[Johnny_LOG] Leaderboard fetch failed:', err);
     leaderboardOnline = false;
@@ -575,7 +613,7 @@ async function uploadToServer(payload) {
 }
 
 async function handleManualUpload() {
-  if (hasUploadedCurrentRun) return;
+  if (hasUploadedCurrentRun) return true;
   syncInputsFromModal();
 
   btnUploadScore.disabled = true;
@@ -596,7 +634,8 @@ async function handleManualUpload() {
   try {
     const newId = FIREBASE_DB_URL ? await uploadToFirebase(payload) : await uploadToServer(payload);
     hasUploadedCurrentRun = true;
-    await fetchLeaderboard(newId);
+    lastUploadedId = newId;
+    await fetchLeaderboard();
     const rank = leaderboardOnline ? leaderboardData.records.findIndex(r => r.id === newId) + 1 : 0;
     lastUploadedRank = rank || null;
     document.getElementById('modalRankStat').textContent = rank ? `#${rank}` : '已上榜';
@@ -604,11 +643,13 @@ async function handleManualUpload() {
       ? `✅ 已同步至全服排行榜！(第 #${rank} 名)`
       : '✅ 已同步至全服排行榜！';
     showToast(rank ? `🏆 成績已上傳！你目前排全服第 #${rank} 名！` : '🏆 成績已上傳！');
+    return true;
   } catch (err) {
     console.warn('[Johnny_LOG] Upload failed:', err);
     btnUploadScore.disabled = false;
     btnUploadScore.textContent = '⚠️ 上傳失敗，點此重試';
     showToast('⚠️ 上傳失敗，請檢查網路後再試一次');
+    return false;
   }
 }
 
@@ -658,30 +699,36 @@ function renderLeaderboard() {
       </div>
       <div class="lb-right">
         <span class="lb-score">${formatFloor(item.floor)} 層</span>
-        <span class="lb-meta">${(item.timeMs / 1000).toFixed(1)}s ${item.hasGhost ? '👻點我PK' : ''}</span>
+        <span class="lb-meta">${(item.timeMs / 1000).toFixed(1)}s</span>
       </div>
+      ${item.hasGhost ? `<button class="lb-pk">${isSelectedGhost ? 'PK中' : '👻PK'}</button>` : ''}
     `;
     row.querySelector('.lb-name').textContent = item.name;
     row.querySelector('.lb-cause').textContent = item.title ? `${item.title} (${item.cause})` : item.cause;
 
     if (item.hasGhost) {
-      row.addEventListener('click', async () => {
-        const frames = await loadGhostFrames(item.id);
-        if (!frames) {
-          showToast('⚠️ 殘影下載失敗，請稍後再試');
-          return;
-        }
-        selectedGhostId = item.id;
-        topGhost = { id: item.id, name: item.name, floor: item.floor, frames };
-        toggleGhostInput.checked = true;
-        ghostStatusLabel.textContent = `👻 對戰殘影：${topGhost.name} (B${topGhost.floor})`;
-        renderLeaderboard();
-        showToast(`👻 已切換對戰殘影為：${item.name} (B${item.floor}層)！`);
-      });
+      row.addEventListener('click', () => challengeGhost(item));
     }
 
     leaderboardList.appendChild(row);
   });
+}
+
+// Pick a ghost from the leaderboard and immediately start a fresh run against it
+async function challengeGhost(item) {
+  const frames = await loadGhostFrames(item.id);
+  if (!frames) {
+    showToast('⚠️ 殘影下載失敗，請稍後再試');
+    return;
+  }
+  selectedGhostId = item.id;
+  topGhost = { id: item.id, name: item.name, floor: item.floor, frames };
+  toggleGhostInput.checked = true;
+  if (!useFixedSeed) setSeedMode(true);
+  startNewGame();
+  renderLeaderboard();
+  canvas.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  showToast(`👻 對手：${item.name} (${formatFloor(item.floor)})，準備好就開始！`);
 }
 
 // ============================================================================
@@ -785,11 +832,14 @@ function generateShareCardCanvas() {
 
 function openImageCardPreview() {
   const cardCanvas = generateShareCardCanvas();
-  const dataUrl = cardCanvas.toDataURL('image/png');
-  generatedCardImg.src = dataUrl;
+  generatedCardImg.src = cardCanvas.toDataURL('image/png');
+  latestCardBlob = null;
   cardCanvas.toBlob(blob => {
     latestCardBlob = blob;
   }, 'image/png');
+  const canShareFiles = !!navigator.canShare &&
+    navigator.canShare({ files: [new File([''], 'x.png', { type: 'image/png' })] });
+  document.getElementById('btnNativeShareImg').classList.toggle('hidden', !canShareFiles);
   imgPreviewModal.classList.remove('hidden');
 }
 
@@ -815,14 +865,10 @@ async function nativeShareCardImage() {
 
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
-      await navigator.share({
-        title: '小朋友下樓梯 NS-SHAFT 戰績',
-        text: buildShareMessage(),
-        files: [file]
-      });
+      await navigator.share({ files: [file], text: buildShareMessage() });
       return;
     } catch (e) {
-      // User cancelled or fallback
+      if (e.name === 'AbortError') return; // User closed the share sheet
     }
   }
   downloadCardPng();
@@ -831,33 +877,26 @@ async function nativeShareCardImage() {
 function buildShareMessage() {
   const name = (modalNameInput.value || playerNameInput.value || '無名小朋友').trim();
   const floorToShow = isGameOver ? currentFloor : Math.max(currentFloor, bestFloor);
-  const titleToShow = isGameOver ? lastTitle : computeTitle(floorToShow, lastCause);
   const baseUrl = window.location.origin + window.location.pathname;
-  const params = new URLSearchParams({
-    c: name,
-    f: String(floorToShow),
-    t: String(Math.round(elapsedMs || floorToShow * 1100)),
-    d: lastCause
-  });
-  if (recordedGhost && recordedGhost.length > 5) {
-    // Include compact ghost trajectory (up to 120 frames) so friends can race your ghost on GitHub Pages!
-    const compactGhost = recordedGhost.slice(0, 120).map(fr => `${fr[0]},${fr[1]},${fr[2]}`).join(';');
-    params.set('g', compactGhost);
-  }
-  const shareUrl = `${baseUrl}?${params.toString()}`;
-  return `🏃【小朋友下樓梯 NS-SHAFT 全服連線版】\n🏆 ${name} 衝到了 地下 ${formatFloor(floorToShow)} 層！\n🏅 獲得稱號：${titleToShow}\n💀 死因：${lastCause}\n👻 快點連結跟我的幽靈殘影PK：\n${shareUrl}`;
+  // Uploaded runs share a short ?r=<id> link; the friend's page loads the ghost from the leaderboard
+  const shareUrl = lastUploadedId ? `${baseUrl}?r=${encodeURIComponent(lastUploadedId)}` : baseUrl;
+  const invite = lastUploadedId ? '👻 來跟我的殘影 PK' : '👻 來挑戰看看';
+  return `🏃 ${name} 在《小朋友下樓梯》衝到地下 ${formatFloor(floorToShow)} 層！\n${invite}：${shareUrl}`;
 }
 
-function shareToLine() {
-  const text = buildShareMessage();
-  const lineUrl = `https://line.me/R/msg/text/?${encodeURIComponent(text)}`;
-  window.open(lineUrl, '_blank', 'noopener,noreferrer');
+async function shareToLine() {
+  // Upload first so the link carries this run's ghost
+  if (isGameOver && !hasUploadedCurrentRun && !(await handleManualUpload())) return;
+  const lineUrl = `https://line.me/R/msg/text/?${encodeURIComponent(buildShareMessage())}`;
+  window.location.href = lineUrl; // window.open after an await gets blocked by mobile popup blockers
 }
 
 function copyShareText() {
-  navigator.clipboard.writeText(buildShareMessage()).then(() => {
-    showToast('✅ 已複製戰績文字！快貼到群組挑戰朋友！');
-  });
+  const text = buildShareMessage();
+  navigator.clipboard.writeText(text).then(
+    () => showToast(lastUploadedId ? '✅ 已複製挑戰連結！' : '✅ 已複製！先上傳成績，連結才會帶你的殘影'),
+    () => window.prompt('複製下面的文字：', text)
+  );
 }
 
 // ============================================================================
@@ -887,13 +926,16 @@ function startNewGame() {
   currentFloor = 1;
   elapsedMs = 0;
   isGameOver = false;
+  isWaitingStart = true;
   hasUploadedCurrentRun = false;
   lastUploadedRank = null;
+  lastUploadedId = null;
+  keys.left = false;
+  keys.right = false;
   redFlashAlpha = 0;
   screenShake = 0;
 
   recordedGhost = [[Math.round(player.x), Math.round(player.y), 0]];
-  ghostTimer = 0;
   particles.length = 0;
   floatingTexts.length = 0;
 
@@ -938,7 +980,7 @@ function triggerGameOver(cause) {
   document.getElementById('modalRankStat').textContent = '未上傳';
 
   btnUploadScore.disabled = false;
-  btnUploadScore.textContent = '🚀 點擊上傳分數＆殘影到排行榜';
+  btnUploadScore.textContent = '🚀 上傳成績到排行榜';
 
   gameOverModal.classList.remove('hidden');
 }
@@ -975,8 +1017,15 @@ function isTypingInInput() {
   return el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA');
 }
 
+function beginRunIfWaiting() {
+  if (!isWaitingStart || isGameOver) return;
+  isWaitingStart = false;
+  sfx.init(); // Audio can only start from a user gesture
+}
+
 window.addEventListener('keydown', e => {
   if (isTypingInInput()) return;
+  if (['ArrowLeft', 'ArrowRight', 'a', 'A', 'd', 'D'].includes(e.key)) beginRunIfWaiting();
   if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
     keys.left = true;
     btnLeft.classList.add('pressed');
@@ -1002,6 +1051,7 @@ window.addEventListener('keyup', e => {
 function bindHoldButton(btn, dirKey) {
   btn.addEventListener('pointerdown', e => {
     e.preventDefault();
+    beginRunIfWaiting();
     keys[dirKey] = true;
     btn.classList.add('pressed');
   });
@@ -1037,6 +1087,7 @@ function handleCanvasPointer(e) {
 
 canvas.addEventListener('pointerdown', e => {
   e.preventDefault();
+  beginRunIfWaiting();
   handleCanvasPointer(e);
 });
 
@@ -1054,12 +1105,10 @@ window.addEventListener('pointerup', () => {
 // Button Bindings
 btnUploadScore.addEventListener('click', handleManualUpload);
 document.getElementById('btnSaveImgModal').addEventListener('click', openImageCardPreview);
-document.getElementById('btnSaveImgSidebar').addEventListener('click', openImageCardPreview);
 document.getElementById('btnDownloadPng').addEventListener('click', downloadCardPng);
 document.getElementById('btnNativeShareImg').addEventListener('click', nativeShareCardImage);
 document.getElementById('btnCloseImgModal').addEventListener('click', () => imgPreviewModal.classList.add('hidden'));
 document.getElementById('btnLineModal').addEventListener('click', shareToLine);
-document.getElementById('btnLineSidebar').addEventListener('click', shareToLine);
 document.getElementById('btnShareModal').addEventListener('click', copyShareText);
 document.getElementById('btnRestart').addEventListener('click', startNewGame);
 document.getElementById('btnRetryModal').addEventListener('click', startNewGame);
@@ -1069,9 +1118,16 @@ document.getElementById('btnMute').addEventListener('click', e => {
   e.currentTarget.textContent = sfx.muted ? '🔇' : '🔊';
 });
 
+function setSeedMode(fixed) {
+  useFixedSeed = fixed;
+  btnSeedMode.textContent = useFixedSeed ? '📅 同圖' : '🎲 隨機';
+  updateGhostLabel();
+}
+
+toggleGhostInput.addEventListener('change', updateGhostLabel);
+
 btnSeedMode.addEventListener('click', () => {
-  useFixedSeed = !useFixedSeed;
-  btnSeedMode.textContent = useFixedSeed ? '📅 同圖競技' : '🎲 隨機地圖';
+  setSeedMode(!useFixedSeed);
   showToast(
     useFixedSeed
       ? '📅 已切換為【同圖競技模式】：與全服幽靈殘影挑戰同一張地圖！'
@@ -1088,7 +1144,7 @@ let lastTime = performance.now();
 function update(rawDt) {
   const dt = Math.min(0.033, rawDt);
 
-  if (!isGameOver) {
+  if (!isGameOver && !isWaitingStart) {
     elapsedMs += dt * 1000;
     if (player.invulnTimer > 0) {
       player.invulnTimer = Math.max(0, player.invulnTimer - dt);
@@ -1274,10 +1330,9 @@ function update(rawDt) {
       triggerGameOver('墜入無底深淵');
     }
 
-    // 6. Record Ghost Frame every 100ms
-    ghostTimer += dt;
-    if (ghostTimer >= 0.1 && recordedGhost.length < 1500) {
-      ghostTimer = 0;
+    // 6. Record Ghost Frame every 100ms, keyed to elapsed time so frame i is exactly at i * 100ms
+    //    (playback reads frames[floor(elapsedMs / 100)], so recording must never drift)
+    while (recordedGhost.length <= elapsedMs / 100 && recordedGhost.length < 1500) {
       recordedGhost.push([Math.round(player.x), Math.round(player.y), player.facing]);
     }
   }
@@ -1476,11 +1531,8 @@ function draw() {
 
   // 5. Ghost Replay
   if (useFixedSeed && topGhost && topGhost.frames.length > 0 && toggleGhostInput.checked) {
-    const gIdx = Math.min(
-      topGhost.frames.length - 1,
-      Math.floor(elapsedMs / 100)
-    );
-    const gf = topGhost.frames[gIdx];
+    // Once the recording ends the ghost disappears instead of freezing in place
+    const gf = topGhost.frames[Math.floor(elapsedMs / 100)];
     if (gf) {
       drawKidSprite(gf[0], gf[1], gf[2] || 0, elapsedMs * 0.015, true, topGhost.name);
     }
@@ -1536,6 +1588,21 @@ function draw() {
     ctx.fillRect(0, 0, W, H);
     ctx.restore();
   }
+
+  if (isWaitingStart && !isGameOver) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(5, 7, 15, 0.72)';
+    ctx.fillRect(0, H * 0.62, W, 120);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#facc15';
+    ctx.font = '900 28px "Segoe UI", "Noto Sans TC", sans-serif';
+    ctx.fillText('按 ◀ ▶ 開始', W / 2, H * 0.62 + 50);
+    ctx.fillStyle = '#cbd5e1';
+    ctx.font = '700 16px "Segoe UI", "Noto Sans TC", sans-serif';
+    const ghostOn = useFixedSeed && topGhost && toggleGhostInput.checked;
+    ctx.fillText(ghostOn ? `👻 對手：${topGhost.name} (${formatFloor(topGhost.floor)})` : '或直接點畫面左右兩邊', W / 2, H * 0.62 + 86);
+    ctx.restore();
+  }
 }
 
 function gameLoop(now) {
@@ -1547,8 +1614,7 @@ function gameLoop(now) {
 }
 
 // Boot
-importUrlChallengeIfPresent();
 startNewGame();
-fetchLeaderboard();
+importUrlChallengeIfPresent().finally(() => fetchLeaderboard());
 setInterval(() => fetchLeaderboard(selectedGhostId), 8000);
 requestAnimationFrame(gameLoop);
