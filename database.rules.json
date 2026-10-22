@@ -24,7 +24,7 @@
       ".read": true,
       "$id": {
         ".write": "!data.exists() && newData.exists() && root.child('records').child($id).exists()",
-        ".validate": "!newData.child('18000').exists() && root.child('records').child($id).child('ghostLen').val() > 5 && newData.child(root.child('records').child($id).child('ghostLen').val() - 1 + '').exists() && !newData.child(root.child('records').child($id).child('ghostLen').val() + '').exists()"
+        ".validate": "!newData.child('18000').exists() && root.child('records').child($id).child('ghostLen').val() > 5"
       }
     }
   }
