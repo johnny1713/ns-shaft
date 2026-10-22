@@ -15,6 +15,7 @@
         "deathX": { ".validate": "newData.isNumber()" },
         "deathY": { ".validate": "newData.isNumber()" },
         "date": { ".validate": "newData.isString() && newData.val().length <= 40" },
+        "mode": { ".validate": "newData.val() === 'random'" },
         "ghostLen": { ".validate": "newData.isNumber() && newData.val() <= 18000" },
         "ghost": { ".validate": "false" },
         "$other": { ".validate": "false" }

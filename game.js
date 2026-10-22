@@ -37,8 +37,20 @@ const btnRight = document.getElementById('btnRight');
 const btnJumpBoard = document.getElementById('btnJumpBoard');
 const nameHint = document.getElementById('nameHint');
 
+// Legend icons are drawn with the real platform renderer
+function drawLegendIcons() {
+  document.querySelectorAll('canvas.plat-icon').forEach(cv => {
+    const c = cv.getContext('2d');
+    const scale = 2;
+    cv.width = 116 * scale;
+    cv.height = 34 * scale;
+    c.scale(scale, scale);
+    drawPlatform(c, { x: 6, y: 11, w: 104, h: 16, type: cv.dataset.type, springCompress: 0, flipped: false }, 0);
+  });
+}
+
 // Bump on every release so players can tell whether their phone loaded the new build
-const GAME_VERSION = 'v2026.10.22';
+const GAME_VERSION = 'v2026.10.22b';
 const DEFAULT_NAME = '電腦課高手';
 document.getElementById('gameVersion').textContent = GAME_VERSION;
 
@@ -673,7 +685,8 @@ async function handleManualUpload() {
     deathX: Math.round(player.x),
     deathY: Math.round(player.y),
     date: new Date().toISOString(),
-    ghost: useFixedSeed ? recordedGhost : []
+    ghost: useFixedSeed ? recordedGhost : [],
+    ...(useFixedSeed ? {} : { mode: 'random' })
   };
 
   try {
@@ -743,7 +756,7 @@ function renderLeaderboard() {
       <div class="lb-left">
         <span class="lb-rank">${medal}</span>
         <div class="lb-name-wrap">
-          <span class="lb-name"></span>
+          <span class="lb-name"></span>${item.mode === 'random' ? '<span class="lb-tag">🎲隨機</span>' : ''}
           <span class="lb-cause"></span>
         </div>
       </div>
@@ -762,6 +775,13 @@ function renderLeaderboard() {
 
     leaderboardList.appendChild(row);
   });
+
+  if (list.length) {
+    const note = document.createElement('div');
+    note.className = 'lb-footnote';
+    note.textContent = `只顯示前 ${LEADERBOARD_SIZE} 名・🎲隨機地圖的成績沒有殘影可 PK`;
+    leaderboardList.appendChild(note);
+  }
 }
 
 // Pick a ghost from the leaderboard and immediately start a fresh run against it
@@ -1456,6 +1476,85 @@ function drawKidSprite(x, y, facing, walkCycle, isGhost = false, ghostName = '')
   }
 }
 
+// Shared by the game canvas and the legend icons under it, so both always look the same
+function drawPlatform(c, p, animOffset) {
+  if (p.type === 'normal') {
+    c.fillStyle = '#38bdf8';
+    c.shadowColor = '#38bdf8';
+    c.shadowBlur = 8;
+    c.beginPath();
+    c.roundRect(p.x, p.y, p.w, p.h, 3);
+    c.fill();
+    c.fillStyle = '#0f172a';
+    const segW = (p.w - 8) / 4;
+    for (let i = 0; i < 4; i++) {
+      c.fillRect(p.x + 3 + i * (segW + 1), p.y + 3, segW - 1, p.h - 6);
+    }
+  } else if (p.type === 'spike') {
+    c.fillStyle = '#881337';
+    c.fillRect(p.x, p.y + 6, p.w, p.h - 6);
+    c.fillStyle = '#f43f5e';
+    c.shadowColor = '#f43f5e';
+    c.shadowBlur = 10;
+    const spikeCount = 9;
+    const sw = p.w / spikeCount;
+    c.beginPath();
+    for (let i = 0; i < spikeCount; i++) {
+      const sx = p.x + i * sw;
+      c.moveTo(sx, p.y + 6);
+      c.lineTo(sx + sw / 2, p.y - 7);
+      c.lineTo(sx + sw, p.y + 6);
+    }
+    c.closePath();
+    c.fill();
+  } else if (p.type === 'trampoline') {
+    const compressY = p.springCompress * 6;
+    c.fillStyle = '#22c55e';
+    c.shadowColor = '#22c55e';
+    c.shadowBlur = 8;
+    c.fillRect(p.x, p.y + compressY, p.w, 5);
+    c.fillStyle = '#15803d';
+    c.fillRect(p.x + 4, p.y + p.h - 4, p.w - 8, 4);
+    c.strokeStyle = '#cbd5e1';
+    c.lineWidth = 2;
+    c.strokeRect(p.x + 18, p.y + compressY + 5, 12, p.h - 9 - compressY);
+    c.strokeRect(p.x + p.w - 30, p.y + compressY + 5, 12, p.h - 9 - compressY);
+  } else if (p.type === 'conveyor_left' || p.type === 'conveyor_right') {
+    c.fillStyle = '#a855f7';
+    c.shadowColor = '#a855f7';
+    c.shadowBlur = 8;
+    c.beginPath();
+    c.roundRect(p.x, p.y, p.w, p.h, 8);
+    c.fill();
+    c.fillStyle = '#1e1b4b';
+    c.beginPath();
+    c.roundRect(p.x + 3, p.y + 3, p.w - 6, p.h - 6, 5);
+    c.fill();
+
+    c.fillStyle = '#e9d5ff';
+    c.font = '900 11px monospace';
+    c.textAlign = 'center';
+    const arrowStr = p.type === 'conveyor_left' ? '◀ ◀ ◀ ◀ ◀' : '▶ ▶ ▶ ▶ ▶';
+    const shift = p.type === 'conveyor_left' ? -animOffset + 8 : animOffset - 8;
+    c.save();
+    c.beginPath();
+    c.rect(p.x + 4, p.y, p.w - 8, p.h);
+    c.clip();
+    c.fillText(arrowStr, p.x + p.w / 2 + shift * 0.5, p.y + 12);
+    c.restore();
+  } else if (p.type === 'fake') {
+    if (p.flipped) {
+      c.fillStyle = 'rgba(251, 146, 60, 0.45)';
+      c.fillRect(p.x, p.y, 10, 26);
+      c.fillRect(p.x + p.w - 10, p.y, 10, 26);
+    } else {
+      c.fillStyle = '#fb923c';
+      c.fillRect(p.x, p.y, p.w / 2 - 1, p.h);
+      c.fillRect(p.x + p.w / 2 + 1, p.y, p.w / 2 - 1, p.h);
+    }
+  }
+}
+
 function draw() {
   ctx.save();
   ctx.fillStyle = '#05070f';
@@ -1501,81 +1600,7 @@ function draw() {
     if (p.y < cameraY - 40 || p.y > cameraY + H + 40) continue;
     ctx.save();
 
-    if (p.type === 'normal') {
-      ctx.fillStyle = '#38bdf8';
-      ctx.shadowColor = '#38bdf8';
-      ctx.shadowBlur = 8;
-      ctx.beginPath();
-      ctx.roundRect(p.x, p.y, p.w, p.h, 3);
-      ctx.fill();
-      ctx.fillStyle = '#0f172a';
-      const segW = (p.w - 8) / 4;
-      for (let i = 0; i < 4; i++) {
-        ctx.fillRect(p.x + 3 + i * (segW + 1), p.y + 3, segW - 1, p.h - 6);
-      }
-    } else if (p.type === 'spike') {
-      ctx.fillStyle = '#881337';
-      ctx.fillRect(p.x, p.y + 6, p.w, p.h - 6);
-      ctx.fillStyle = '#f43f5e';
-      ctx.shadowColor = '#f43f5e';
-      ctx.shadowBlur = 10;
-      const spikeCount = 9;
-      const sw = p.w / spikeCount;
-      ctx.beginPath();
-      for (let i = 0; i < spikeCount; i++) {
-        const sx = p.x + i * sw;
-        ctx.moveTo(sx, p.y + 6);
-        ctx.lineTo(sx + sw / 2, p.y - 7);
-        ctx.lineTo(sx + sw, p.y + 6);
-      }
-      ctx.closePath();
-      ctx.fill();
-    } else if (p.type === 'trampoline') {
-      const compressY = p.springCompress * 6;
-      ctx.fillStyle = '#22c55e';
-      ctx.shadowColor = '#22c55e';
-      ctx.shadowBlur = 8;
-      ctx.fillRect(p.x, p.y + compressY, p.w, 5);
-      ctx.fillStyle = '#15803d';
-      ctx.fillRect(p.x + 4, p.y + p.h - 4, p.w - 8, 4);
-      ctx.strokeStyle = '#cbd5e1';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(p.x + 18, p.y + compressY + 5, 12, p.h - 9 - compressY);
-      ctx.strokeRect(p.x + p.w - 30, p.y + compressY + 5, 12, p.h - 9 - compressY);
-    } else if (p.type === 'conveyor_left' || p.type === 'conveyor_right') {
-      ctx.fillStyle = '#a855f7';
-      ctx.shadowColor = '#a855f7';
-      ctx.shadowBlur = 8;
-      ctx.beginPath();
-      ctx.roundRect(p.x, p.y, p.w, p.h, 8);
-      ctx.fill();
-      ctx.fillStyle = '#1e1b4b';
-      ctx.beginPath();
-      ctx.roundRect(p.x + 3, p.y + 3, p.w - 6, p.h - 6, 5);
-      ctx.fill();
-
-      ctx.fillStyle = '#e9d5ff';
-      ctx.font = '900 11px monospace';
-      ctx.textAlign = 'center';
-      const arrowStr = p.type === 'conveyor_left' ? '◀ ◀ ◀ ◀ ◀' : '▶ ▶ ▶ ▶ ▶';
-      const shift = p.type === 'conveyor_left' ? -animOffset + 8 : animOffset - 8;
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(p.x + 4, p.y, p.w - 8, p.h);
-      ctx.clip();
-      ctx.fillText(arrowStr, p.x + p.w / 2 + shift * 0.5, p.y + 12);
-      ctx.restore();
-    } else if (p.type === 'fake') {
-      if (p.flipped) {
-        ctx.fillStyle = 'rgba(251, 146, 60, 0.45)';
-        ctx.fillRect(p.x, p.y, 10, 26);
-        ctx.fillRect(p.x + p.w - 10, p.y, 10, 26);
-      } else {
-        ctx.fillStyle = '#fb923c';
-        ctx.fillRect(p.x, p.y, p.w / 2 - 1, p.h);
-        ctx.fillRect(p.x + p.w / 2 + 1, p.y, p.w / 2 - 1, p.h);
-      }
-    }
+    drawPlatform(ctx, p, animOffset);
 
     ctx.restore();
   }
@@ -1669,3 +1694,5 @@ startNewGame();
 importUrlChallengeIfPresent().finally(() => fetchLeaderboard());
 setInterval(() => fetchLeaderboard(selectedGhostId), 8000);
 requestAnimationFrame(gameLoop);
+
+drawLegendIcons();

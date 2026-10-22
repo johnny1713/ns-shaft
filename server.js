@@ -273,6 +273,7 @@ const server = http.createServer(async (req, res) => {
         cause,
         msg,
         date: new Date().toISOString(),
+        ...(body.mode === 'random' ? { mode: 'random' } : {}),
         ghost
       };
 
