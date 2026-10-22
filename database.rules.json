@@ -8,7 +8,7 @@
         ".write": "!data.exists() && newData.exists()",
         ".validate": "newData.hasChildren(['name', 'floor', 'timeMs'])",
         "name": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 16" },
-        "floor": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 9999" },
+        "floor": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 9999 && newData.parent().child('timeMs').val() >= (newData.val() - 2) * 1500 && newData.parent().child('timeMs').val() <= newData.val() * 4000 + 4000" },
         "timeMs": { ".validate": "newData.isNumber() && newData.val() >= 0" },
         "cause": { ".validate": "newData.isString() && newData.val().length <= 40" },
         "title": { ".validate": "newData.isString() && newData.val().length <= 40" },
@@ -16,7 +16,7 @@
         "deathY": { ".validate": "newData.isNumber()" },
         "date": { ".validate": "newData.isString() && newData.val().length <= 40" },
         "mode": { ".validate": "newData.val() === 'random'" },
-        "ghostLen": { ".validate": "newData.isNumber() && newData.val() <= 18000" },
+        "ghostLen": { ".validate": "newData.isNumber() && newData.val() <= 18000 && (newData.val() === 0 || newData.val() === 18000 || (newData.val() >= newData.parent().child('timeMs').val() / 100 - 5 && newData.val() <= newData.parent().child('timeMs').val() / 100 + 5))" },
         "ghost": { ".validate": "false" },
         "$other": { ".validate": "false" }
       }
