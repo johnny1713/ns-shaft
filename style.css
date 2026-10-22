@@ -478,6 +478,10 @@ body {
   text-overflow: ellipsis;
 }
 
+.lb-cause:empty {
+  display: none;
+}
+
 .lb-right {
   margin-left: auto;
   flex-shrink: 0;

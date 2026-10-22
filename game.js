@@ -50,7 +50,7 @@ function drawLegendIcons() {
 }
 
 // Bump on every release so players can tell whether their phone loaded the new build
-const GAME_VERSION = 'v2026.10.22k';
+const GAME_VERSION = 'v2026.10.22l';
 const DEFAULT_NAME = '電腦課高手';
 document.getElementById('gameVersion').textContent = GAME_VERSION;
 
@@ -767,7 +767,8 @@ function renderLeaderboard() {
         <span class="lb-rank">${medal}</span>
         <div class="lb-name-wrap">
           <span class="lb-name"></span>${item.mode === 'random' ? '<span class="lb-tag">🎲隨機</span>' : ''}
-          <span class="lb-cause"></span>
+          <span class="lb-cause lb-title"></span>
+          <span class="lb-cause lb-death"></span>
         </div>
       </div>
       <div class="lb-right">
@@ -778,7 +779,9 @@ function renderLeaderboard() {
       ${adminUser && item !== urlChallenge ? '<button class="lb-del" title="刪除這筆紀錄">🗑️</button>' : ''}
     `;
     row.querySelector('.lb-name').textContent = item.name;
-    row.querySelector('.lb-cause').textContent = item.title ? `${item.title} (${item.cause})` : item.cause;
+    // Title and cause on separate lines so a long title never hides how they died
+    row.querySelector('.lb-title').textContent = item.title || '';
+    row.querySelector('.lb-death').textContent = item.cause ? `💀 ${item.cause}` : '';
 
     if (item.hasGhost) {
       row.addEventListener('click', () => challengeGhost(item));
