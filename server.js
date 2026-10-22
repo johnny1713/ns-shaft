@@ -70,7 +70,7 @@ function createDefaultData() {
         name: '⚡電腦課之神',
         floor: 64,
         timeMs: 68400,
-        title: '🔥 地下深淵統治者',
+        title: '🌋 地下深淵統治者',
         cause: '被彈簧床送去撞天花板',
         msg: 'B60以後速度快到眼花！',
         date: new Date(Date.now() - 3600 * 1000 * 4).toISOString(),

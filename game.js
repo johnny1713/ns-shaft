@@ -104,7 +104,7 @@ function computeTitle(floor, cause) {
   if (floor >= 400) rankTitle = '👑 地心之王・下樓梯神話';
   else if (floor >= 300) rankTitle = '💎 鑽石級無底洞傳奇';
   else if (floor >= 200) rankTitle = '🔥 熔岩層的不死鳥';
-  else if (floor >= 100) rankTitle = '👑 下100層的傳說真男人';
+  else if (floor >= 100) rankTitle = '⭐ 下100層的傳說真男人';
   else if (floor >= 60) rankTitle = '🌋 地下深淵統治者';
   else if (floor >= 30) rankTitle = '⚡ 電腦課風雲人物';
   else if (floor >= 15) rankTitle = '👟 下樓梯熟練工';
