@@ -50,7 +50,7 @@ function drawLegendIcons() {
 }
 
 // Bump on every release so players can tell whether their phone loaded the new build
-const GAME_VERSION = 'v2026.10.22j';
+const GAME_VERSION = 'v2026.10.22k';
 const DEFAULT_NAME = '電腦課高手';
 document.getElementById('gameVersion').textContent = GAME_VERSION;
 
@@ -101,7 +101,10 @@ modalNameInput.addEventListener('change', syncInputsFromModal);
 // ============================================================================
 function computeTitle(floor, cause) {
   let rankTitle = '🌱 剛進電腦教室的菜鳥';
-  if (floor >= 100) rankTitle = '👑 下100層的傳說真男人';
+  if (floor >= 400) rankTitle = '👑 地心之王・下樓梯神話';
+  else if (floor >= 300) rankTitle = '💎 鑽石級無底洞傳奇';
+  else if (floor >= 200) rankTitle = '🔥 熔岩層的不死鳥';
+  else if (floor >= 100) rankTitle = '👑 下100層的傳說真男人';
   else if (floor >= 60) rankTitle = '🔥 地下深淵統治者';
   else if (floor >= 30) rankTitle = '⚡ 電腦課風雲人物';
   else if (floor >= 15) rankTitle = '👟 下樓梯熟練工';
@@ -111,6 +114,14 @@ function computeTitle(floor, cause) {
   if (cause.includes('尖刺地板')) return `${rankTitle}・鐵布衫苦主`;
   if (cause.includes('深淵')) return `${rankTitle}・自由落體大師`;
   return rankTitle;
+}
+
+// Leaderboard badge for very deep runs
+function floorBadge(floor) {
+  if (floor >= 400) return '👑 ';
+  if (floor >= 300) return '💎 ';
+  if (floor >= 200) return '🔥 ';
+  return '';
 }
 
 // ============================================================================
@@ -760,7 +771,7 @@ function renderLeaderboard() {
         </div>
       </div>
       <div class="lb-right">
-        <span class="lb-score">${formatFloor(item.floor)} 層</span>
+        <span class="lb-score">${floorBadge(item.floor)}${formatFloor(item.floor)} 層</span>
         <span class="lb-meta">${(item.timeMs / 1000).toFixed(1)}s</span>
       </div>
       ${item.hasGhost ? `<button class="lb-pk">${isSelectedGhost ? 'PK中' : '👻PK'}</button>` : ''}
