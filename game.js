@@ -50,7 +50,7 @@ function drawLegendIcons() {
 }
 
 // Bump on every release so players can tell whether their phone loaded the new build
-const GAME_VERSION = 'v2026.10.22l';
+const GAME_VERSION = 'v2026.10.22m';
 const DEFAULT_NAME = '電腦課高手';
 document.getElementById('gameVersion').textContent = GAME_VERSION;
 
@@ -105,7 +105,7 @@ function computeTitle(floor, cause) {
   else if (floor >= 300) rankTitle = '💎 鑽石級無底洞傳奇';
   else if (floor >= 200) rankTitle = '🔥 熔岩層的不死鳥';
   else if (floor >= 100) rankTitle = '👑 下100層的傳說真男人';
-  else if (floor >= 60) rankTitle = '🔥 地下深淵統治者';
+  else if (floor >= 60) rankTitle = '🌋 地下深淵統治者';
   else if (floor >= 30) rankTitle = '⚡ 電腦課風雲人物';
   else if (floor >= 15) rankTitle = '👟 下樓梯熟練工';
   else if (floor >= 5) rankTitle = '🎒 偷玩電腦的小學生';
