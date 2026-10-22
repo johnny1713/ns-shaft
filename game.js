@@ -50,7 +50,7 @@ function drawLegendIcons() {
 }
 
 // Bump on every release so players can tell whether their phone loaded the new build
-const GAME_VERSION = 'v2026.10.22c';
+const GAME_VERSION = 'v2026.10.22d';
 const DEFAULT_NAME = '電腦課高手';
 document.getElementById('gameVersion').textContent = GAME_VERSION;
 
@@ -1094,21 +1094,42 @@ function beginRunIfWaiting() {
   sfx.init(); // Audio can only start from a user gesture
 }
 
-// Restarting mid-run needs a second press within 2 seconds, so a stray tap never throws away a good run
-let restartArmedUntil = 0;
+// Restarting mid-run asks first (and pauses the game), so a stray tap never throws away a good run
+const confirmRestartModal = document.getElementById('confirmRestartModal');
+let isPaused = false;
+let pendingRestart = null;
 function requestRestart(onConfirm = startNewGame) {
-  const midRun = !isGameOver && !isWaitingStart;
-  if (midRun && performance.now() > restartArmedUntil) {
-    restartArmedUntil = performance.now() + 2000;
-    showToast('⚠️ 遊戲進行中，2 秒內再按一次才會重來');
+  if (isGameOver || isWaitingStart) {
+    onConfirm();
     return;
   }
-  restartArmedUntil = 0;
-  onConfirm();
+  pendingRestart = onConfirm;
+  isPaused = true;
+  keys.left = keys.right = false;
+  btnLeft.classList.remove('pressed');
+  btnRight.classList.remove('pressed');
+  confirmRestartModal.classList.remove('hidden');
 }
+function closeRestartConfirm(confirmed) {
+  confirmRestartModal.classList.add('hidden');
+  isPaused = false;
+  lastTime = performance.now(); // Don't let the paused time leak into the next frame
+  const action = pendingRestart;
+  pendingRestart = null;
+  if (confirmed && action) action();
+}
+document.getElementById('btnConfirmRestart').addEventListener('click', () => closeRestartConfirm(true));
+document.getElementById('btnCancelRestart').addEventListener('click', () => closeRestartConfirm(false));
 
 window.addEventListener('keydown', e => {
   if (isTypingInInput()) return;
+  if (isPaused) {
+    // Enter confirms, Esc / Space / R cancels, so mashing the restart key never confirms by accident
+    if (e.key === 'Enter') closeRestartConfirm(true);
+    else if (e.key === 'Escape' || e.key === ' ' || e.key === 'r' || e.key === 'R') closeRestartConfirm(false);
+    e.preventDefault();
+    return;
+  }
   if (['ArrowLeft', 'ArrowRight', 'a', 'A', 'd', 'D'].includes(e.key)) beginRunIfWaiting();
   if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
     keys.left = true;
@@ -1231,7 +1252,7 @@ let lastTime = performance.now();
 function update(rawDt) {
   const dt = Math.min(0.033, rawDt);
 
-  if (!isGameOver && !isWaitingStart) {
+  if (!isGameOver && !isWaitingStart && !isPaused) {
     elapsedMs += dt * 1000;
     if (player.invulnTimer > 0) {
       player.invulnTimer = Math.max(0, player.invulnTimer - dt);

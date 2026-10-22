@@ -691,6 +691,30 @@ body {
   -webkit-user-select: text;
 }
 
+.confirm-box {
+  max-width: 300px;
+  text-align: center;
+}
+.confirm-box p {
+  margin: 8px 0 14px;
+  color: var(--text-muted);
+}
+.confirm-actions {
+  display: flex;
+  gap: 10px;
+}
+.btn-cancel {
+  width: 100%;
+  background: var(--bg-card);
+  color: var(--text-main);
+  border: 1px solid var(--border-glow);
+  border-radius: 9px;
+  padding: 10px;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
 .btn-upload {
   width: 100%;
   background: linear-gradient(90deg, #facc15, #f97316);
