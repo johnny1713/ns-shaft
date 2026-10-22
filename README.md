@@ -40,4 +40,4 @@ node server.js          # http://localhost:3081，可用 PORT 環境變數改 po
 
 ## 管理員
 
-長按版本號 3 秒會開啟管理員面板，用 Google 登入後可以在排行榜上刪除紀錄、清理孤兒殘影。真正的權限由 `database.rules.json` 裡的管理員 UID 控制（把 `REPLACE_WITH_ADMIN_UID` 換成自己的 UID 再發布）。
+長按版本號 3 秒會開啟管理員面板，用 Google 登入後可以在排行榜上刪除紀錄、清理孤兒殘影。真正的權限由 `database.rules.json` 裡的管理員 UID 控制（換管理員時改掉規則裡的 UID 再發布）。
