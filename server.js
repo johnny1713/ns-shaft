@@ -256,7 +256,7 @@ const server = http.createServer(async (req, res) => {
       const msg = String(body.msg || '啊～～～！').trim().slice(0, 26);
       const deathX = Math.round(Number(body.deathX) || 240);
       const deathY = Math.round(Number(body.deathY) || 500);
-      const ghost = Array.isArray(body.ghost) ? body.ghost.slice(0, 1500) : [];
+      const ghost = Array.isArray(body.ghost) ? body.ghost.slice(0, 18000) : [];
 
       db.stats.totalGames = (db.stats.totalGames || 0) + 1;
       db.stats.totalFloorsDescended = (db.stats.totalFloorsDescended || 0) + floor;
@@ -284,10 +284,10 @@ const server = http.createServer(async (req, res) => {
 
       const rank = db.records.findIndex(r => r.id === entry.id) + 1;
 
-      // Keep top 30 records, retain ghost frames for top 8 so players can click & race different ghosts!
-      db.records = db.records.slice(0, 30).map((r, i) => ({
+      // Keep top 100 records, retain ghost frames for the top 50 (same cutoff as the Firebase client)
+      db.records = db.records.slice(0, 100).map((r, i) => ({
         ...r,
-        ghost: i < 8 ? r.ghost : []
+        ghost: i < 50 ? r.ghost : []
       }));
 
       db.deaths.push({

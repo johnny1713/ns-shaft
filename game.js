@@ -428,9 +428,12 @@ function updateGhostLabel() {
 // 讀取或上傳失敗時會明確顯示錯誤，不再偷偷改用本機假資料，避免每台裝置看到的排行榜不一樣。
 // ============================================================================
 const LEADERBOARD_SIZE = 20;
+const GHOST_MAX_FRAMES = 18000; // 30 minutes at 10 frames/s
+const GHOST_KEEP_TOP = 50;       // only runs that would rank in the top 50 upload a ghost
 const ghostCache = new Map(); // id -> frames, so ghosts are downloaded only once
 let urlChallenge = null;      // Friend challenge from a LINE share link (kept in memory, never uploaded)
 let leaderboardOnline = false;
+let allRecords = [];          // Every online record (not just the visible top 20), used for the ghost cutoff
 
 function firebaseBase() {
   return FIREBASE_DB_URL.replace(/\/+$/, '');
@@ -442,6 +445,12 @@ function recordHasGhost(r) {
 
 function sortRecords(records) {
   return records.sort((a, b) => (b.floor || 0) - (a.floor || 0) || (b.timeMs || 0) - (a.timeMs || 0));
+}
+
+function qualifiesForGhost(payload) {
+  const ahead = allRecords.filter(r => (r.floor || 0) > payload.floor ||
+    ((r.floor || 0) === payload.floor && (r.timeMs || 0) >= payload.timeMs)).length;
+  return ahead < GHOST_KEEP_TOP;
 }
 
 // Shared challenge link: ?r=<record id> (current), or the older ?c=Name&f=42&t=38500&g=... form
@@ -563,6 +572,7 @@ async function selectGhost(records) {
 async function fetchLeaderboard(ghostId = selectedGhostId) {
   try {
     const data = FIREBASE_DB_URL ? await fetchRecordsFromFirebase() : await fetchRecordsFromServer(ghostId);
+    allRecords = data.records;
     const records = urlChallenge && !data.records.some(r => r.id === urlChallenge.id)
       ? sortRecords([...data.records, urlChallenge])
       : data.records;
@@ -579,7 +589,8 @@ async function fetchLeaderboard(ghostId = selectedGhostId) {
 }
 
 async function uploadToFirebase(payload) {
-  const { ghost, ...record } = payload;
+  const { ghost: rawGhost, ...record } = payload;
+  const ghost = qualifiesForGhost(payload) ? rawGhost : [];
   record.ghostLen = ghost.length;
   const postRes = await fetch(`${firebaseBase()}/records.json`, {
     method: 'POST',
@@ -1332,7 +1343,7 @@ function update(rawDt) {
 
     // 6. Record Ghost Frame every 100ms, keyed to elapsed time so frame i is exactly at i * 100ms
     //    (playback reads frames[floor(elapsedMs / 100)], so recording must never drift)
-    while (recordedGhost.length <= elapsedMs / 100 && recordedGhost.length < 1500) {
+    while (recordedGhost.length <= elapsedMs / 100 && recordedGhost.length < GHOST_MAX_FRAMES) {
       recordedGhost.push([Math.round(player.x), Math.round(player.y), player.facing]);
     }
   }

@@ -15,7 +15,7 @@
         "deathX": { ".validate": "newData.isNumber()" },
         "deathY": { ".validate": "newData.isNumber()" },
         "date": { ".validate": "newData.isString() && newData.val().length <= 40" },
-        "ghostLen": { ".validate": "newData.isNumber() && newData.val() <= 1500" },
+        "ghostLen": { ".validate": "newData.isNumber() && newData.val() <= 18000" },
         "ghost": { ".validate": "false" },
         "$other": { ".validate": "false" }
       }
@@ -23,7 +23,8 @@
     "ghosts": {
       ".read": true,
       "$id": {
-        ".write": "!data.exists() && newData.exists() && root.child('records').child($id).exists()"
+        ".write": "!data.exists() && newData.exists() && root.child('records').child($id).exists()",
+        ".validate": "!newData.child('18000').exists() && root.child('records').child($id).child('ghostLen').val() > 5 && newData.child(root.child('records').child($id).child('ghostLen').val() - 1 + '').exists() && !newData.child(root.child('records').child($id).child('ghostLen').val() + '').exists()"
       }
     }
   }
