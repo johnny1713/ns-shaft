@@ -50,7 +50,7 @@ function drawLegendIcons() {
 }
 
 // Bump on every release so players can tell whether their phone loaded the new build
-const GAME_VERSION = 'v2026.10.22r';
+const GAME_VERSION = 'v2026.10.23a';
 const DEFAULT_NAME = '電腦課高手';
 document.getElementById('gameVersion').textContent = GAME_VERSION;
 
@@ -90,7 +90,12 @@ function updateNameHint() {
   modalNameInput.classList.toggle('needs-name', isDefault);
   nameHint.classList.toggle('hidden', !isDefault);
 }
-btnJumpBoard.addEventListener('click', () => leaderboardList.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+// Ignored mid-run: a stray tap below the move buttons would scroll the game off screen
+const isRunActive = () => !isWaitingStart && !isGameOver;
+btnJumpBoard.addEventListener('click', () => {
+  if (isRunActive()) return;
+  leaderboardList.scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
 playerNameInput.addEventListener('input', syncInputsFromSidebar);
 modalNameInput.addEventListener('input', syncInputsFromModal);
 playerNameInput.addEventListener('change', syncInputsFromSidebar);
@@ -1861,6 +1866,7 @@ function draw() {
 }
 
 function gameLoop(now) {
+  btnJumpBoard.classList.toggle('locked', isRunActive());
   const rawDt = (now - lastTime) / 1000;
   lastTime = now;
   update(rawDt);

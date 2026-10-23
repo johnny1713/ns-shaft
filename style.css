@@ -946,6 +946,9 @@ body {
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  .btn-jump-board.locked {
+    opacity: 0.45;
+  }
   body {
     padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
     align-items: flex-start;
